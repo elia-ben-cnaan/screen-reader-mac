@@ -231,8 +231,24 @@ func parseReply(_ s: String) -> (label: String?, q: String?, a: String?) {
     var lastImage: CGImage?          // latest frame, memory only; replaced every capture
     var askTask: Task<Void, Never>?
     var state: State = .idle { didSet { render() } }
+    var statusItem: NSStatusItem!
+    let pauseItem = NSMenuItem(title: "השהה", action: #selector(toggleRun), keyEquivalent: "p")
+
+    // Menu bar icon (top of screen): pause/resume, show/hide window, quit.
+    func setupMenuBar() {
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        statusItem.button?.image = NSImage(systemSymbolName: "text.viewfinder", accessibilityDescription: "קורא מסך")
+        let m = NSMenu()
+        pauseItem.target = self; m.addItem(pauseItem)
+        let show = NSMenuItem(title: "הצג / הסתר חלון", action: #selector(toggleWindow), keyEquivalent: "h"); show.target = self; m.addItem(show)
+        m.addItem(.separator())
+        let quit = NSMenuItem(title: "יציאה", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"); m.addItem(quit)
+        statusItem.menu = m
+    }
+    @objc func toggleWindow() { panel.isVisible ? panel.orderOut(nil) : panel.orderFrontRegardless() }
 
     func applicationDidFinishLaunching(_ n: Notification) {
+        setupMenuBar()
         panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 360, height: 260),
                         styleMask: [.titled, .closable, .nonactivatingPanel],
                         backing: .buffered, defer: false)
@@ -280,7 +296,7 @@ func parseReply(_ s: String) -> (label: String?, q: String?, a: String?) {
         render()
         start()                                                 // automatic from launch
     }
-    func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { true }
+    func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { false }   // closing the window hides it; quit from the menu bar icon
 
     func render() {
         let (text, color): (String, NSColor) = switch state {
@@ -290,6 +306,7 @@ func parseReply(_ s: String) -> (label: String?, q: String?, a: String?) {
             case .error: ("שגיאה", .systemRed)
         }
         status.stringValue = text; dot.textColor = color
+        pauseItem.title = state == .reading ? "השהה" : "הפעל"
     }
 
     func showAnswer(_ q: String, _ a: String, _ l: String) {
