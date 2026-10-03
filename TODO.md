@@ -4,7 +4,7 @@
 - Automated OCR test (test/run-tests.sh) + manual test page (test/cases.html)
 ## Current
 - First build + test on Elia's Mac (written on Linux — not yet compiled)
-- Practice mode: Explain button sends current OCR text to Claude (claude-opus-5-5), shows answer + short explanation. Uses logged-in Claude Code CLI (`claude -p`, subscription) by default; API key (~/.config/screenreader/anthropic_key or ANTHROPIC_API_KEY) overrides. Panel is visible in screen sharing.
+- Auto mode: every new question on screen -> server (Gemini Flash) -> short answer in the window, no explanation
 - Visual questions: auto TEXT/VISUAL detection + crop; tests q-text, q-shapes, q-matrix
 ## Next
 - Region selection (currently whole main display)

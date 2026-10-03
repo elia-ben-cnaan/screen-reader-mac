@@ -11,12 +11,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 CONF = os.path.expanduser("~/.config/screenreader")
 PORT = int(os.environ.get("SR_PORT", "8099"))
 MODEL = os.environ.get("SR_MODEL", "gemini-flash-latest")
-PROMPT = ("You are a tutor for a practice simulator. You get OCR text of a practice question (Hebrew or English, "
-          "may contain noise) and, for visual questions, a cropped image of the question and its answer options "
-          "(shapes, matrices, visual sequences). Identify the question and options, give the correct answer, then a "
-          "short explanation of the reasoning so the user learns the method. Reply in the question's language. "
-          "Be brief. The FIRST line must be exactly `ANSWER: <label>` where <label> is the option's label as shown "
-          "on screen (e.g. א/ב/ג/ד or A/B/C/D).")
+PROMPT = ("You solve practice-simulator questions shown on screen. Input: noisy OCR text of the whole screen "
+          "(Hebrew or English) and, for visual questions, a cropped image of the question and options (shapes, "
+          "matrices, sequences). Find the one active question and answer it. NO explanations. Reply in the "
+          "question's language with exactly three lines:\n"
+          "ANSWER: <option label as shown on screen, e.g. א/ב/ג/ד or A/B/C/D; '-' if there are no options>\n"
+          "Q: <the question, cleaned, at most 20 words>\n"
+          "A: <the answer itself, at most 4 words, e.g. '5 שעות' or 'הרביעית'>")
 
 
 def read(name):
@@ -32,7 +33,7 @@ def gemini_stream(key, text, image):
         parts.insert(0, {"inline_data": {"mime_type": "image/png", "data": image}})
     body = {"system_instruction": {"parts": [{"text": PROMPT}]},
             "contents": [{"role": "user", "parts": parts}],
-            "generationConfig": {"maxOutputTokens": 1500}}
+            "generationConfig": {"maxOutputTokens": 200, "thinkingConfig": {"thinkingBudget": 512}}}
     req = urllib.request.Request(
         f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:streamGenerateContent?alt=sse",
         data=json.dumps(body).encode(), headers={"content-type": "application/json", "x-goog-api-key": key})

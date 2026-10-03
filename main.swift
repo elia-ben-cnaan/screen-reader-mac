@@ -202,92 +202,123 @@ func captureScreen() async throws -> CGImage {
     return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: cfg)
 }
 
-// MARK: App
+// MARK: App — small native window: what's on screen, the answer, nothing else.
+// Server reply lines: "ANSWER: ג" / "Q: <question>" / "A: <answer>". Parsed as they stream in.
+func parseReply(_ s: String) -> (label: String?, q: String?, a: String?) {
+    var label: String?, q: String?, a: String?
+    for line in s.split(whereSeparator: \.isNewline) {
+        let l = line.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: "**", with: "")
+        if l.hasPrefix("ANSWER:") { let v = l.dropFirst(7).trimmingCharacters(in: .whitespaces); label = v == "-" || v.isEmpty ? nil : v }
+        else if l.hasPrefix("Q:") { q = l.dropFirst(2).trimmingCharacters(in: .whitespaces) }
+        else if l.hasPrefix("A:") { a = l.dropFirst(2).trimmingCharacters(in: .whitespaces) }
+    }
+    return (label, q, a)
+}
+
 @MainActor final class App: NSObject, NSApplicationDelegate {
-    enum State: String { case idle = "IDLE", reading = "READING", paused = "PAUSED", error = "ERROR" }
+    enum State { case idle, reading, paused, error }
     var panel: NSPanel!
-    let status = NSTextField(labelWithString: "IDLE")
-    let stats = NSTextField(labelWithString: "")
-    let toggle = NSButton(title: "Start", target: nil, action: nil)
-    let copyBtn = NSButton(title: "Copy", target: nil, action: nil)
-    let explainBtn = NSButton(title: "Explain", target: nil, action: nil)
-    let answerView = NSTextView()
-    let textView = NSTextView()
+    let dot = NSTextField(labelWithString: "●")
+    let status = NSTextField(labelWithString: "")
+    let onScreen = NSTextField(labelWithString: "על המסך")
+    let question = NSTextField(wrappingLabelWithString: "")
+    let answer = NSTextField(labelWithString: "")
+    let label = NSTextField(labelWithString: "")
     var timer: Timer?
     var busy = false
     var lastPrint: [UInt8] = []
     var lastText = ""
     var lastImage: CGImage?          // latest frame, memory only; replaced every capture
-    var nCaptures = 0, nOCR = 0, nSkipped = 0, lastMs = 0
+    var askTask: Task<Void, Never>?
     var state: State = .idle { didSet { render() } }
 
     func applicationDidFinishLaunching(_ n: Notification) {
-        panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 420, height: 520),
-                        styleMask: [.titled, .closable, .resizable, .utilityWindow, .nonactivatingPanel],
+        panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 360, height: 260),
+                        styleMask: [.titled, .closable, .nonactivatingPanel],
                         backing: .buffered, defer: false)
-        panel.title = "Screen Reader"
+        panel.title = "קורא מסך"
         panel.level = .floating
         panel.isFloatingPanel = true
-        panel.setFrameTopLeftPoint(NSPoint(x: (NSScreen.main?.visibleFrame.maxX ?? 800) - 400,
+        panel.isMovableByWindowBackground = true
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.setFrameTopLeftPoint(NSPoint(x: (NSScreen.main?.visibleFrame.maxX ?? 800) - 380,
                                            y: (NSScreen.main?.visibleFrame.maxY ?? 800) - 20))
-        toggle.target = self; toggle.action = #selector(toggleRun)
-        copyBtn.target = self; copyBtn.action = #selector(copyText)
-        explainBtn.target = self; explainBtn.action = #selector(explainNow)
-        answerView.isEditable = false; answerView.font = .systemFont(ofSize: 13)
-        answerView.baseWritingDirection = .natural; answerView.autoresizingMask = [.width]
-        status.font = .boldSystemFont(ofSize: 12)
-        stats.font = .monospacedDigitSystemFont(ofSize: 10, weight: .regular)
-        stats.textColor = .secondaryLabelColor
-        textView.isEditable = false
-        textView.font = .systemFont(ofSize: 13)
-        textView.baseWritingDirection = .natural   // Hebrew lines render RTL
-        let scroll = NSScrollView(); scroll.hasVerticalScroller = true; scroll.documentView = textView
-        textView.autoresizingMask = [.width]
-        let top = NSStackView(views: [status, NSView(), toggle, copyBtn, explainBtn])
-        let ascroll = NSScrollView(); ascroll.hasVerticalScroller = true; ascroll.documentView = answerView
-        ascroll.translatesAutoresizingMaskIntoConstraints = false
-        let stack = NSStackView(views: [top, scroll, ascroll, stats])
-        stack.orientation = .vertical; stack.alignment = .leading
-        stack.edgeInsets = NSEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
-        top.translatesAutoresizingMaskIntoConstraints = false
-        scroll.translatesAutoresizingMaskIntoConstraints = false
-        panel.contentView = stack
+        dot.font = .systemFont(ofSize: 10)
+        status.font = .systemFont(ofSize: 12); status.textColor = .secondaryLabelColor
+        onScreen.font = .systemFont(ofSize: 12, weight: .medium); onScreen.textColor = .secondaryLabelColor
+        question.font = .systemFont(ofSize: 15); question.maximumNumberOfLines = 3
+        question.lineBreakMode = .byTruncatingTail; question.preferredMaxLayoutWidth = 312
+        answer.font = .systemFont(ofSize: 34, weight: .bold)
+        answer.lineBreakMode = .byTruncatingTail
+        label.font = .systemFont(ofSize: 14, weight: .semibold); label.textColor = .systemBlue
+        for f in [status, onScreen, question, answer, label] { f.alignment = .right; f.baseWritingDirection = .rightToLeft }
+
+        let statusRow = NSStackView(views: [dot, status])
+        statusRow.spacing = 6; statusRow.userInterfaceLayoutDirection = .rightToLeft
+        let click = NSClickGestureRecognizer(target: self, action: #selector(toggleRun))
+        statusRow.addGestureRecognizer(click)                  // click the status line = start / pause
+        statusRow.toolTip = "לחיצה: הפעלה / השהיה"
+
+        let stack = NSStackView(views: [statusRow, onScreen, question, answer, label])
+        stack.orientation = .vertical; stack.alignment = .trailing; stack.spacing = 8
+        stack.setCustomSpacing(18, after: statusRow); stack.setCustomSpacing(18, after: question)
+        stack.setCustomSpacing(2, after: answer)
+        stack.edgeInsets = NSEdgeInsets(top: 16, left: 24, bottom: 20, right: 24)
+        for v in [question, answer, label] as [NSView] {
+            v.translatesAutoresizingMaskIntoConstraints = false
+            v.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -48).isActive = true
+        }
+        let bg = NSVisualEffectView(); bg.material = .popover; bg.blendingMode = .behindWindow; bg.state = .active
+        bg.addSubview(stack); stack.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            top.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -16),
-            scroll.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -16),
-            ascroll.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -16),
-            ascroll.heightAnchor.constraint(equalTo: scroll.heightAnchor),
+            stack.topAnchor.constraint(equalTo: bg.topAnchor), stack.bottomAnchor.constraint(lessThanOrEqualTo: bg.bottomAnchor),
+            stack.leadingAnchor.constraint(equalTo: bg.leadingAnchor), stack.trailingAnchor.constraint(equalTo: bg.trailingAnchor),
         ])
-        panel.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        panel.contentView = bg
+        panel.orderFrontRegardless()
         render()
+        start()                                                 // automatic from launch
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { true }
 
     func render() {
-        status.stringValue = state.rawValue
-        status.textColor = [.idle: NSColor.secondaryLabelColor, .reading: .systemGreen,
-                            .paused: .systemOrange, .error: .systemRed][state]
-        toggle.title = state == .reading ? "Pause" : "Start"
-        stats.stringValue = "captures \(nCaptures) · OCR \(nOCR) · skipped \(nSkipped) · last OCR \(lastMs) ms"
+        let (text, color): (String, NSColor) = switch state {
+            case .idle: ("מוכן", .secondaryLabelColor)
+            case .reading: ("מקליט · אוטומטי", .systemRed)
+            case .paused: ("מושהה · לחץ להמשך", .systemOrange)
+            case .error: ("שגיאה", .systemRed)
+        }
+        status.stringValue = text; dot.textColor = color
     }
+
+    func showAnswer(_ q: String, _ a: String, _ l: String) {
+        question.stringValue = q; answer.stringValue = a; label.stringValue = l
+        answer.textColor = .labelColor
+    }
+    func showThinking(_ q: String) { showAnswer(q, "• • •", ""); answer.textColor = .tertiaryLabelColor }
 
     @objc func toggleRun() { state == .reading ? pause() : start() }
-    @objc func copyText() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(lastText, forType: .string)
-    }
 
-    @objc func explainNow() {
-        guard let img = lastImage, !lastText.isEmpty else { answerView.string = "Press Start first so there is screen text."; return }
-        explainBtn.isEnabled = false; answerView.string = "Thinking…"
-        let q = lastText
-        Task {
+    // New question on screen -> cancel the old request, ask about the new one.
+    func askAuto(_ img: CGImage, _ text: String) {
+        askTask?.cancel()
+        let preview = text.split(whereSeparator: \.isNewline).prefix(3).joined(separator: " ")
+        showThinking(preview)
+        askTask = Task {
             let r = try? await Task.detached {
-                try await explain(img, q) { p in Task { @MainActor in self.answerView.string = p } }
+                try await explain(img, text) { p in
+                    Task { @MainActor in
+                        let x = parseReply(p)
+                        if let q = x.q { self.question.stringValue = q }
+                        if let a = x.a, !a.isEmpty { self.answer.stringValue = a; self.answer.textColor = .labelColor }
+                    }
+                }
             }.value
-            let a = r.map { "[\($0.mode)]\n\($0.answer)" } ?? "Request failed"
-            answerView.string = a; explainBtn.isEnabled = true
+            guard !Task.isCancelled else { return }
+            guard let r else { showAnswer(preview, "אין חיבור", "השרת לא ענה"); return }
+            let x = parseReply(r.answer)
+            if x.a == nil { showAnswer(preview, "—", String(r.answer.prefix(80))); return }   // server message / error
+            showAnswer(x.q ?? preview, x.a!, x.label.map { "תשובה \($0)" } ?? "")
         }
     }
 
@@ -295,7 +326,8 @@ func captureScreen() async throws -> CGImage {
         if !CGPreflightScreenCaptureAccess() {
             CGRequestScreenCaptureAccess()
             state = .error
-            show("Screen Recording permission needed.\nSystem Settings → Privacy & Security → Screen & System Audio Recording → enable ScreenReader, then quit & reopen the app.")
+            showAnswer("System Settings ← Privacy & Security ← Screen & System Audio Recording ← הפעל את ScreenReader, ואז סגור ופתח מחדש.",
+                       "צריך הרשאה", "הקלטת מסך")
             return
         }
         state = .reading
@@ -306,33 +338,25 @@ func captureScreen() async throws -> CGImage {
         }
         timer?.tolerance = 0.3
     }
-    func pause() { timer?.invalidate(); timer = nil; state = .paused }
-
-    func show(_ s: String) {
-        textView.string = s
-        textView.scrollToBeginningOfDocument(nil)
-    }
+    func pause() { timer?.invalidate(); timer = nil; askTask?.cancel(); state = .paused }
 
     func tick() {
         guard state == .reading, !busy else { return }
         busy = true
         Task {
-            defer { busy = false; render() }
+            defer { busy = false }
             do {
                 let img = try await capture()
-                nCaptures += 1
                 let fp = fingerprint(img)
-                if diff(fp, lastPrint) < changeThreshold { nSkipped += 1; return }
+                if diff(fp, lastPrint) < changeThreshold { return }
                 lastPrint = fp
                 lastImage = img
-                let t0 = Date()
                 let text = try await Task.detached(priority: .utility) { normalize(try ocr(img)) }.value
-                nOCR += 1
-                lastMs = Int(Date().timeIntervalSince(t0) * 1000)
-                if text != lastText { lastText = text; show(text) }   // only update on new text
+                let stable = text.replacingOccurrences(of: #"\b\d{1,2}:\d{2}(:\d{2})?\b"#, with: "", options: .regularExpression)
+                if stable != lastText, !text.isEmpty { lastText = stable; askAuto(img, text) }   // clock ticking != new question
             } catch {
                 state = .error; timer?.invalidate(); timer = nil
-                show("Error: \(error.localizedDescription)")
+                showAnswer(error.localizedDescription, "שגיאה", "")
             }
         }
     }
