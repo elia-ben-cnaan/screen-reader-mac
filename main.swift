@@ -578,13 +578,13 @@ struct Center: View {
         VStack(alignment: .leading, spacing: 0) {
             if m.needsPermission {
                 Empty(icon: "lock.shield", title: "צריך הרשאת הקלטת מסך",
-                      body: "הפעל את ScreenReader ברשימה, ואז סגור ופתח את האפליקציה.",
+                      text: "הפעל את ScreenReader ברשימה, ואז סגור ופתח את האפליקציה.",
                       action: ("פתח הגדרות", { NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!) }))
             } else if m.phase == .idle && m.current == nil {
                 if !m.hasChosenSource {
-                    Empty(icon: "macwindow", title: "מה לקרוא?", body: "בחר את חלון הסימולטור מהתפריט למעלה, ואז לחץ התחל.", action: nil)
+                    Empty(icon: "macwindow", title: "מה לקרוא?", text: "בחר את חלון הסימולטור מהתפריט למעלה, ואז לחץ התחל.", action: nil)
                 } else {
-                    Empty(icon: "play.circle", title: "מוכן", body: "פתח את הסימולטור ולחץ התחל (⌥⌘S).", action: nil)
+                    Empty(icon: "play.circle", title: "מוכן", text: "פתח את הסימולטור ולחץ התחל (⌥⌘S).", action: nil)
                 }
             } else if let u = m.instructions {
                 Label("הנחיות יחידה", systemImage: "book").font(.system(size: 12, weight: .medium)).foregroundStyle(.purple)
@@ -615,13 +615,13 @@ struct Center: View {
 }
 
 struct Empty: View {
-    let icon: String, title: String, body: String; let action: (String, () -> Void)?
+    let icon: String, title: String, text: String; let action: (String, () -> Void)?
     var body: some View {
         VStack(spacing: 10) {
             Spacer()
             Image(systemName: icon).font(.system(size: 34)).foregroundStyle(.tertiary)
             Text(title).font(.system(size: 17, weight: .semibold))
-            Text(self.body).font(.system(size: 13)).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            Text(text).font(.system(size: 13)).foregroundStyle(.secondary).multilineTextAlignment(.center)
             if let a = action { Button(a.0, action: a.1).padding(.top, 4) }
             Spacer()
         }.frame(maxWidth: .infinity)
