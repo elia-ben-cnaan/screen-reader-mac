@@ -100,6 +100,10 @@ class H(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     def do_GET(self):
+        if self.path.split("?")[0] in ("/sim", "/sim/"):   # test simulator page (answers stay in key.json, not served)
+            b = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "test", "sim5", "index.html"), "rb").read()
+            self.send_response(200); self.send_header("content-type", "text/html; charset=utf-8")
+            self.send_header("content-length", str(len(b))); self.end_headers(); return self.wfile.write(b)
         self.reply(200, "ok" if read("llm_key") else "no key")
 
     def do_POST(self):
