@@ -213,19 +213,6 @@ enum Source: Equatable {
         }
         return .screen
     }
-    func archive() {
-        guard let s = session, !s.units.isEmpty, let d = try? JSONEncoder().encode(s) else { return }
-        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd HH.mm"
-        try? d.write(to: sessionsDir.appendingPathComponent(f.string(from: s.start) + ".json"))
-        try? summaryText().write(to: sessionsDir.appendingPathComponent(f.string(from: s.start) + ".txt"), atomically: true, encoding: .utf8)
-    }
-    // Reset: archive whatever exists, clear the screen, ready for a new session.
-    func newSession() {
-        timer?.invalidate(); timer = nil; askTask?.cancel(); thinking = false
-        if session?.end == nil { session?.end = Date() }
-        archive(); session = nil; current = nil; instructions = nil; status = ""; phase = .idle
-        try? FileManager.default.removeItem(at: sessionURL); answerCache.removeAll(); lastPrint = []; lastText = ""
-    }
     func save() {
         let d = UserDefaults.standard
         switch self {
@@ -374,6 +361,19 @@ func refreshWindowList() async {
     }
 
     var unit: Unit? { session?.units.last }
+    func archive() {
+        guard let s = session, !s.units.isEmpty, let d = try? JSONEncoder().encode(s) else { return }
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd HH.mm"
+        try? d.write(to: sessionsDir.appendingPathComponent(f.string(from: s.start) + ".json"))
+        try? summaryText().write(to: sessionsDir.appendingPathComponent(f.string(from: s.start) + ".txt"), atomically: true, encoding: .utf8)
+    }
+    // Reset: archive whatever exists, clear the screen, ready for a new session.
+    func newSession() {
+        timer?.invalidate(); timer = nil; askTask?.cancel(); thinking = false
+        if session?.end == nil { session?.end = Date() }
+        archive(); session = nil; current = nil; instructions = nil; status = ""; phase = .idle
+        try? FileManager.default.removeItem(at: sessionURL); answerCache.removeAll(); lastPrint = []; lastText = ""
+    }
     func archive() {
         guard let s = session, !s.units.isEmpty, let d = try? JSONEncoder().encode(s) else { return }
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd HH.mm"
