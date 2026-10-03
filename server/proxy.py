@@ -13,7 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 CONF = os.path.expanduser("~/.config/screenreader")
 PORT = int(os.environ.get("SR_PORT", "8099"))
 FAST = os.environ.get("SR_MODELS", "gemini-flash-latest,gemini-flash-lite-latest,gemini-3.8-flash").split(",")
-STRONG = os.environ.get("SR_STRONG", "gemini-pro-latest,gemini-3.8-flash").split(",")
+STRONG = os.environ.get("SR_STRONG", "gemini-3.8-flash").split(",")   # re-check must stay well under the app's 60s timeout
 
 GUIDE = """How to solve each kind (use the unit instructions in CONTEXT when present — they define the rules):
 - Analogies: find the exact relation in the given pair (part-whole, cause, degree, tool-use...), pick the option with the same relation in the same direction.
@@ -85,10 +85,25 @@ def gemini(key, model, text, image, context, strong=False):
     req = urllib.request.Request(
         f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
         data=json.dumps(body).encode(), headers={"content-type": "application/json", "x-goog-api-key": key})
-    with urllib.request.urlopen(req, timeout=12 if not strong else 40) as r:
+    with urllib.request.urlopen(req, timeout=15 if not strong else 25) as r:
         j = json.load(r)
     return "".join(p.get("text", "") for c in j.get("candidates", [])
                    for p in c.get("content", {}).get("parts", []) if not p.get("thought")).strip()
+
+
+LABELS = "אבגדהABCDE12345"
+def tidy(out):
+    """Models sometimes drop the ANSWER line or write 'ב.' — normalise so the app always gets a clean label."""
+    lines = [l.strip().replace("**", "") for l in out.splitlines() if l.strip()]
+    f = {l.split(":", 1)[0].strip().upper(): l.split(":", 1)[1].strip() for l in lines if ":" in l}
+    if f.get("KIND", "").lower() != "question":
+        return "\n".join(lines)
+    lab = f.get("ANSWER", "").strip(" .)(")
+    if not lab and f.get("A", "")[:1] in LABELS and f.get("A", "")[1:2] in (".", ")", " ", ""):
+        lab = f["A"][0]; f["A"] = f["A"][1:].strip(" .)")
+    f["ANSWER"] = lab[:1] if lab[:1] in LABELS else lab
+    order = ["ANSWER", "KIND", "NUM", "Q", "A", "WHY", "CONF", "TRAP"]
+    return "\n".join(f"{k}: {f[k]}" for k in order if k in f)
 
 
 def first_ok(key, models, *a, **kw):
@@ -96,9 +111,10 @@ def first_ok(key, models, *a, **kw):
     err = ""
     for m in models:
         try:
-            out = gemini(key, m, *a, **kw)
-            if out:
+            out = tidy(gemini(key, m, *a, **kw))
+            if "KIND:" in out:
                 return out, ""
+            err = "Model gave no usable reply"
         except urllib.error.HTTPError as e:
             err = f"Model error {e.code}: {e.read().decode()[:200]}"
             if e.code not in (400, 404, 429, 500, 503):
