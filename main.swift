@@ -213,6 +213,19 @@ enum Source: Equatable {
         }
         return .screen
     }
+    func archive() {
+        guard let s = session, !s.units.isEmpty, let d = try? JSONEncoder().encode(s) else { return }
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd HH.mm"
+        try? d.write(to: sessionsDir.appendingPathComponent(f.string(from: s.start) + ".json"))
+        try? summaryText().write(to: sessionsDir.appendingPathComponent(f.string(from: s.start) + ".txt"), atomically: true, encoding: .utf8)
+    }
+    // Reset: archive whatever exists, clear the screen, ready for a new session.
+    func newSession() {
+        timer?.invalidate(); timer = nil; askTask?.cancel(); thinking = false
+        if session?.end == nil { session?.end = Date() }
+        archive(); session = nil; current = nil; instructions = nil; status = ""; phase = .idle
+        try? FileManager.default.removeItem(at: sessionURL); answerCache.removeAll(); lastPrint = []; lastText = ""
+    }
     func save() {
         let d = UserDefaults.standard
         switch self {
@@ -292,13 +305,19 @@ func captureScreen() async throws -> CGImage {
 }
 
 // MARK: Session model — units (from instruction screens) holding answered questions. Saved as JSON while running.
-struct Item: Codable, Identifiable { var id = UUID(); var num: String; var question: String; var answer: String; var label: String; var why: String; var low: Bool; var ms: Int }
+struct Item: Codable, Identifiable { var id = UUID(); var num: String; var question: String; var answer: String; var label: String; var why: String; var low: Bool; var ms: Int; var trap: String? }
 struct Unit: Codable, Identifiable { var id = UUID(); var title: String; var num: String; var summary: String; var visual: Bool; var passage = ""; var items: [Item] = [] }
 struct Session: Codable { var start = Date(); var end: Date?; var units: [Unit] = [] }
 let sessionURL: URL = {
     let d = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("ScreenReader")
     try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
     return d.appendingPathComponent("session.json")
+}()
+// Every finished session is kept as sessions/YYYY-MM-DD HH.mm.json
+let sessionsDir: URL = {
+    let d = sessionURL.deletingLastPathComponent().appendingPathComponent("sessions")
+    try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+    return d
 }()
 
 // Server reply: "KEY: value" lines (format in server/proxy.py).
@@ -355,6 +374,19 @@ func refreshWindowList() async {
     }
 
     var unit: Unit? { session?.units.last }
+    func archive() {
+        guard let s = session, !s.units.isEmpty, let d = try? JSONEncoder().encode(s) else { return }
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd HH.mm"
+        try? d.write(to: sessionsDir.appendingPathComponent(f.string(from: s.start) + ".json"))
+        try? summaryText().write(to: sessionsDir.appendingPathComponent(f.string(from: s.start) + ".txt"), atomically: true, encoding: .utf8)
+    }
+    // Reset: archive whatever exists, clear the screen, ready for a new session.
+    func newSession() {
+        timer?.invalidate(); timer = nil; askTask?.cancel(); thinking = false
+        if session?.end == nil { session?.end = Date() }
+        archive(); session = nil; current = nil; instructions = nil; status = ""; phase = .idle
+        try? FileManager.default.removeItem(at: sessionURL); answerCache.removeAll(); lastPrint = []; lastText = ""
+    }
     func save() { if let s = session, let d = try? JSONEncoder().encode(s) { try? d.write(to: sessionURL) } }
 
     func loadWindows() { Task { await refreshWindowList(); windows = visibleWindows } }
@@ -380,7 +412,7 @@ func refreshWindowList() async {
     }
     func finish() {
         timer?.invalidate(); timer = nil; askTask?.cancel(); thinking = false
-        session?.end = Date(); save(); phase = .idle; status = ""
+        session?.end = Date(); save(); archive(); phase = .idle; status = ""
         if session?.units.isEmpty == false { showSummary = true }
     }
     // ⌥⌘P
@@ -455,7 +487,7 @@ func refreshWindowList() async {
             }
         case "question":
             if session!.units.isEmpty { session!.units.append(Unit(title: "כללי", num: "", summary: "", visual: false)) }
-            let it = Item(num: r["NUM"], question: r["Q"], answer: r["A"], label: r["ANSWER"], why: r["WHY"], low: r["CONF"].lowercased() == "low", ms: ms)
+            let it = Item(num: r["NUM"], question: r["Q"], answer: r["A"], label: r["ANSWER"], why: r["WHY"], low: r["CONF"].lowercased() == "low", ms: ms, trap: r["TRAP"].isEmpty ? nil : r["TRAP"])
             let ui = session!.units.count - 1
             if let i = session!.units[ui].items.firstIndex(where: { $0.question == it.question || (!it.num.isEmpty && $0.num == it.num) }) {
                 session!.units[ui].items[i] = it                         // came back to a question: update, don't duplicate
@@ -474,7 +506,7 @@ func refreshWindowList() async {
         var out = "ScreenReader · \(s.start.formatted(date: .abbreviated, time: .shortened))\n"
         for u in s.units {
             out += "\nיחידה \(u.num) · \(u.title)\n"
-            for (i, it) in u.items.enumerated() { out += "\(it.num.isEmpty ? String(i + 1) : it.num). \(it.label) · \(it.answer)\(it.low ? " (?)" : "")\n" }
+            for (i, it) in u.items.enumerated() { out += "\(it.num.isEmpty ? String(i + 1) : it.num). \(it.label) · \(it.answer)\(it.low ? " (?)" : "")\(it.trap.map { " · מלכודת: \($0)" } ?? "")\n" }
         }
         return out
     }
@@ -493,6 +525,7 @@ struct AnswerBlock: View {
             }
             if !item.label.isEmpty { Text("תשובה \(item.label)").font(.system(size: big * 0.34, weight: .semibold)).foregroundStyle(Color.accentColor) }
             if showWhy, !item.why.isEmpty { Text(item.why).font(.system(size: 12)).foregroundStyle(.secondary).padding(.top, 6) }
+            if let t = item.trap { Text("⚠ מלכודת: \(t)").font(.system(size: showWhy ? 12 : 11)).foregroundStyle(.orange).lineLimit(showWhy ? 3 : 2).padding(.top, showWhy ? 2 : 0) }
         }
     }
 }
@@ -525,6 +558,7 @@ struct MainView: View {
                 if m.phase != .idle { Circle().fill(m.phase == .running ? .red : .orange).frame(width: 7, height: 7) }
                 Spacer()
                 SourceMenu(m: m)
+                Button { m.newSession() } label: { Image(systemName: "arrow.counterclockwise") }.help("סשן חדש: איפוס (הקודם נשמר)")
                 Button { m.onFloat?() } label: { Image(systemName: "pip.enter") }.help("חלון צף (⌥⌘M)")
                 Button { m.startStop() } label: {
                     Label(m.phase == .idle ? "התחל" : "סיים", systemImage: m.phase == .idle ? "play.fill" : "stop.fill")
@@ -559,6 +593,7 @@ struct Sidebar: View {
                             HStack {
                                 Text("\(it.num.isEmpty ? String(i + 1) : it.num) · \(it.label)").monospacedDigit()
                                 Spacer()
+                                if it.trap != nil { Text("⚠").foregroundStyle(.orange) }
                                 if it.low { Text("?").foregroundStyle(.orange) }
                             }
                             .contentShape(Rectangle())
@@ -666,6 +701,7 @@ struct SummaryView: View {
             HStack {
                 Text("סיכום סשן").font(.system(size: 17, weight: .semibold)); Spacer()
                 Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(m.summaryText(), forType: .string) } label: { Label("העתק", systemImage: "doc.on.doc") }
+                Button { NSWorkspace.shared.open(sessionsDir) } label: { Label("סשנים קודמים", systemImage: "folder") }
                 Button("סגור") { dismiss() }.keyboardShortcut(.defaultAction)
             }
             HStack(spacing: 10) {
@@ -673,12 +709,16 @@ struct SummaryView: View {
                 Stat(title: "זמן כולל", value: Duration.seconds((s.end ?? Date()).timeIntervalSince(s.start)).formatted(.time(pattern: .hourMinuteSecond)))
                 Stat(title: "ממוצע לתשובה", value: items.isEmpty ? "—" : String(format: "%.1f שנ׳", Double(items.map(\.ms).reduce(0, +)) / Double(items.count) / 1000))
                 Stat(title: "לבדיקה (?)", value: "\(items.filter(\.low).count)", tint: .orange)
+                Stat(title: "מלכודות", value: "\(items.filter { $0.trap != nil }.count)", tint: .orange)
             }
             List {
                 ForEach(s.units) { u in
                     DisclosureGroup {
                         ForEach(Array(u.items.enumerated()), id: \.element.id) { i, it in
-                            HStack { Text("\(it.num.isEmpty ? String(i + 1) : it.num). \(it.label) · \(it.answer)"); Spacer(); if it.low { Text("?").foregroundStyle(.orange) } }
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack { Text("\(it.num.isEmpty ? String(i + 1) : it.num). \(it.label) · \(it.answer)"); Spacer(); if it.low { Text("?").foregroundStyle(.orange) } }
+                                if let t = it.trap { Text("⚠ מלכודת: \(t)").font(.system(size: 11)).foregroundStyle(.orange) }
+                            }
                                 .help(it.question)
                         }
                     } label: {
@@ -690,7 +730,7 @@ struct SummaryView: View {
             }
             .listStyle(.inset)
         }
-        .padding(20).frame(width: 560, height: 480)
+        .padding(20).frame(width: 640, height: 500)
         .environment(\.layoutDirection, .rightToLeft)
     }
 }
@@ -772,7 +812,8 @@ nonisolated(unsafe) var hotkeyRefs: [EventHotKeyRef?] = []
         let sItem = NSMenuItem(); main.addItem(sItem)
         let sm = NSMenu(title: "סשן"); sItem.submenu = sm
         for (t, sel, k) in [("התחל / סיים  ⌥⌘S", #selector(mStart), ""), ("השהה / המשך  ⌥⌘P", #selector(mPause), ""),
-                            ("שאל שוב  ⌥⌘R", #selector(mAgain), ""), ("חלון צף  ⌥⌘M", #selector(mFloat), ""), ("סיכום", #selector(mSummary), "")] {
+                            ("שאל שוב  ⌥⌘R", #selector(mAgain), ""), ("חלון צף  ⌥⌘M", #selector(mFloat), ""), ("סיכום", #selector(mSummary), ""),
+                            ("סשן חדש (איפוס)", #selector(mNew), "n"), ("פתח סשנים קודמים", #selector(mFolder), "")] {
             let i = NSMenuItem(title: t, action: sel, keyEquivalent: k); i.target = self; sm.addItem(i)
         }
         let wItem = NSMenuItem(); main.addItem(wItem)
@@ -788,6 +829,8 @@ nonisolated(unsafe) var hotkeyRefs: [EventHotKeyRef?] = []
     @objc func mPause() { m.pauseResume() }
     @objc func mAgain() { m.askAgain() }
     @objc func mFloat() { toggleFloat() }
+    @objc func mNew() { m.newSession() }
+    @objc func mFolder() { NSWorkspace.shared.open(sessionsDir) }
     @objc func mSummary() { if m.session != nil { window.makeKeyAndOrderFront(nil); m.showSummary = true } }
 
     func applicationShouldHandleReopen(_ s: NSApplication, hasVisibleWindows: Bool) -> Bool { window.makeKeyAndOrderFront(nil); return true }

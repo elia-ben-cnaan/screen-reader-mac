@@ -40,6 +40,7 @@ Q: <the question, cleaned, max 20 words>
 A: <the answer itself, max 4 words>
 WHY: <one short line, the key step, max 12 words>
 CONF: <high or low — low if the OCR/image is unclear or you are unsure>
+TRAP: <only if one wrong option is clearly built to lure a quick solver (partial calculation, reversed relation, misread axis, the obvious-looking pick): "<label> — <why it is tempting and wrong, max 12 words>"; otherwise ->
 For INSTRUCTIONS:
 KIND: instructions
 UNIT: <unit name, 1-3 words, e.g. אנלוגיות>
