@@ -37,4 +37,5 @@ jobs:
           cat sim-run.tsv; python3 test/sim5/score.py sim-run.tsv | tee sim-score.txt
           rm -f ~/.config/screenreader/server
       - uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/main'   # branch test runs never replace the downloadable build
         with: { tag_name: latest, name: "ScreenReader (latest build)", files: ScreenReader.zip, make_latest: true }
