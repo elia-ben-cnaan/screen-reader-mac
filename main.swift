@@ -418,9 +418,25 @@ func refreshWindowList() async {
         }
     }
     // ⌥⌘R: ask again about what's on screen now, bypassing the cache
+    // Safety net (↻ / ⌥⌘R): take a fresh capture now and ask about it, ignoring change detection and cache.
     func askAgain() {
-        guard let img = lastImage, !lastText.isEmpty else { return }
-        answerCache.removeAll(); handle(img, lastText, replace: true)
+        if phase == .idle { start(); return }
+        Task {
+            do {
+                let img = try await captureScreen()
+                let text = try await Task.detached(priority: .userInitiated) { normalize(try ocr(img)) }.value
+                lastPrint = fingerprint(img); lastImage = img
+                lastText = text.replacingOccurrences(of: #"\b\d{1,2}:\d{2}(:\d{2})?\b"#, with: "", options: .regularExpression)
+                answerCache.removeAll(); handle(img, text, replace: true)
+            } catch { status = error.localizedDescription }
+        }
+    }
+    // ‹ › browse answered questions in session order
+    var allItems: [Item] { session?.units.flatMap(\.items) ?? [] }
+    func step(_ d: Int) {
+        let xs = allItems; guard !xs.isEmpty else { return }
+        let i = xs.firstIndex { $0.id == current?.id } ?? xs.count - 1
+        current = xs[max(0, min(xs.count - 1, i + d))]; instructions = nil
     }
 
     func tick() {
@@ -571,6 +587,9 @@ struct MainView: View {
                 if m.inflight > 1 { Text("+\(m.inflight - 1)").font(.system(size: 11)).foregroundStyle(.secondary).help("עונה גם על שאלות קודמות") }
                 Spacer()
                 SourceMenu(m: m)
+                Button { m.askAgain() } label: { Image(systemName: "arrow.clockwise") }.help("קרא את המסך עכשיו (⌥⌘R)")
+                Button { m.step(-1) } label: { Image(systemName: "chevron.right") }.help("שאלה קודמת")
+                Button { m.step(1) } label: { Image(systemName: "chevron.left") }.help("שאלה הבאה")
                 Button { m.showList.toggle() } label: { Image(systemName: "sidebar.right") }.help("רשימת השאלות (⌥⌘L)")
                 Button { m.newSession() } label: { Image(systemName: "arrow.counterclockwise") }.help("סשן חדש: איפוס (הקודם נשמר)")
                 Button { m.onFloat?() } label: { Image(systemName: "pip.enter") }.help("חלון צף (⌥⌘M)")
@@ -688,6 +707,7 @@ struct MiniView: View {
                 Circle().fill(m.phase == .running ? .red : .orange).frame(width: 6, height: 6)
                 Text(miniTitle).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
                 Spacer()
+                Button { m.askAgain() } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.plain).foregroundStyle(.secondary).help("קרא את המסך עכשיו (⌥⌘R)")
                 Button(action: onExpand) { Image(systemName: "arrow.up.left.and.arrow.down.right") }.buttonStyle(.plain).foregroundStyle(.secondary).help("חלון מלא (⌥⌘M)")
             }
             if m.thinking { Text("• • •").font(.system(size: 28, weight: .semibold)).foregroundStyle(.tertiary) }
@@ -827,7 +847,7 @@ nonisolated(unsafe) var hotkeyRefs: [EventHotKeyRef?] = []
         let sItem = NSMenuItem(); main.addItem(sItem)
         let sm = NSMenu(title: "סשן"); sItem.submenu = sm
         for (t, sel, k) in [("התחל / סיים  ⌥⌘S", #selector(mStart), ""), ("השהה / המשך  ⌥⌘P", #selector(mPause), ""),
-                            ("שאל שוב  ⌥⌘R", #selector(mAgain), ""), ("חלון צף  ⌥⌘M", #selector(mFloat), ""), ("סיכום", #selector(mSummary), ""),
+                            ("קרא עכשיו  ⌥⌘R", #selector(mAgain), ""), ("חלון צף  ⌥⌘M", #selector(mFloat), ""), ("סיכום", #selector(mSummary), ""),
                             ("סשן חדש (איפוס)", #selector(mNew), "n"), ("פתח סשנים קודמים", #selector(mFolder), "")] {
             let i = NSMenuItem(title: t, action: sel, keyEquivalent: k); i.target = self; sm.addItem(i)
         }
