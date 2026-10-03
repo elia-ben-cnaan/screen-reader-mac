@@ -249,7 +249,7 @@ func parseReply(_ s: String) -> (label: String?, q: String?, a: String?) {
         question.font = .systemFont(ofSize: 15); question.maximumNumberOfLines = 3
         question.lineBreakMode = .byTruncatingTail; question.preferredMaxLayoutWidth = 312
         answer.font = .systemFont(ofSize: 34, weight: .bold)
-        answer.lineBreakMode = .byTruncatingTail
+        answer.lineBreakMode = .byTruncatingTail; answer.minimumScaleFactor = 0.5; answer.allowsDefaultTighteningForTruncation = true
         label.font = .systemFont(ofSize: 14, weight: .semibold); label.textColor = .systemBlue
         for f in [status, onScreen, question, answer, label] { f.alignment = .right; f.baseWritingDirection = .rightToLeft }
 
@@ -260,11 +260,11 @@ func parseReply(_ s: String) -> (label: String?, q: String?, a: String?) {
         statusRow.toolTip = "לחיצה: הפעלה / השהיה"
 
         let stack = NSStackView(views: [statusRow, onScreen, question, answer, label])
-        stack.orientation = .vertical; stack.alignment = .trailing; stack.spacing = 8
+        stack.orientation = .vertical; stack.alignment = .centerX; stack.spacing = 8
         stack.setCustomSpacing(18, after: statusRow); stack.setCustomSpacing(18, after: question)
         stack.setCustomSpacing(2, after: answer)
         stack.edgeInsets = NSEdgeInsets(top: 16, left: 24, bottom: 20, right: 24)
-        for v in [question, answer, label] as [NSView] {
+        for v in [statusRow, onScreen, question, answer, label] as [NSView] {   // full width minus margins; text right-aligned
             v.translatesAutoresizingMaskIntoConstraints = false
             v.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -48).isActive = true
         }
@@ -273,6 +273,7 @@ func parseReply(_ s: String) -> (label: String?, q: String?, a: String?) {
         NSLayoutConstraint.activate([
             stack.topAnchor.constraint(equalTo: bg.topAnchor), stack.bottomAnchor.constraint(lessThanOrEqualTo: bg.bottomAnchor),
             stack.leadingAnchor.constraint(equalTo: bg.leadingAnchor), stack.trailingAnchor.constraint(equalTo: bg.trailingAnchor),
+            stack.widthAnchor.constraint(equalToConstant: 360),
         ])
         panel.contentView = bg
         panel.orderFrontRegardless()
