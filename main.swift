@@ -347,6 +347,10 @@ func refreshWindowList() async {
     @Published var session: Session?
     @Published var current: Item?
     @Published var instructions: Unit?          // last screen was a unit intro
+    // SELF_REPORT screen: plain meaning + the options on screen. Shown only; never recorded, never suggests an option.
+    struct SelfReport { var plain: String; var options: [String]; var neg: Bool }
+    @Published var selfReport: SelfReport?
+    @Published var timing = ""                   // capture · OCR · server ms of the last screen
     @Published var status = ""                  // waiting / thinking / errors
     @Published var thinking = false
     @Published var pending = ""                 // question text while thinking
@@ -358,7 +362,7 @@ func refreshWindowList() async {
     var hasChosenSource: Bool { UserDefaults.standard.string(forKey: "source") != nil }
     var onFloat: (() -> Void)?
     var picker: RegionPicker?
-    private var timer: Timer?, busy = false, ticks = 0, lastPrint: [UInt8] = [], lastText = "", lastImage: CGImage?
+    private var timer: Timer?, busy = false, ticks = 0, capMs = 0, ocrMs = 0, lastPrint: [UInt8] = [], lastText = "", lastImage: CGImage?
 
     init() {
         if let d = try? Data(contentsOf: sessionURL), let s = try? JSONDecoder().decode(Session.self, from: d), s.end == nil, !s.units.isEmpty {
@@ -445,13 +449,17 @@ func refreshWindowList() async {
         Task {
             defer { busy = false }
             do {
+                let tc = Date()
                 let img = try await captureScreen()
+                capMs = Int(Date().timeIntervalSince(tc) * 1000)
                 windows = visibleWindows
                 let fp = fingerprint(img)
                 ticks += 1
                 if diff(fp, lastPrint) < changeThreshold && ticks % forceEvery != 0 { return }
                 lastPrint = fp; lastImage = img
+                let to = Date()
                 let text = try await Task.detached(priority: .utility) { normalize(try ocr(img)) }.value
+                ocrMs = Int(Date().timeIntervalSince(to) * 1000)
                 let stable = text.replacingOccurrences(of: #"\b\d{1,2}:\d{2}(:\d{2})?\b"#, with: "", options: .regularExpression)
                 // clock ticking or OCR noise on the same screen != new screen
                 if !text.isEmpty, similarity(stable, lastText) < 0.9 { lastText = stable; handle(img, text) }
@@ -494,7 +502,10 @@ func refreshWindowList() async {
             if r == nil, my == seq { status = "אין חיבור לשרת" }
             while let entry = done[nextApply] {
                 done[nextApply] = nil
-                if let (rep, raw, ms, txt) = entry { apply(rep, raw: raw, ms: ms, replace: replace, latest: nextApply == seq, text: txt) }
+                if let (rep, raw, ms, txt) = entry {
+                    if nextApply == seq { timing = "צילום \(capMs) · OCR \(ocrMs) · שרת \(ms) · סה״כ \(capMs + ocrMs + ms) ms" }
+                    apply(rep, raw: raw, ms: ms, replace: replace, latest: nextApply == seq, text: txt)
+                }
                 nextApply += 1
             }
             if nextApply > seq { thinking = false }
@@ -512,7 +523,7 @@ func refreshWindowList() async {
                 if latest { instructions = u; current = nil; status = "הנחיות יחידה" }   // same unit intro read again: don't open a new unit
             } else {
                 let u = Unit(title: r["UNIT"].isEmpty ? "יחידה" : r["UNIT"], num: r["NUM"], summary: r["SUMMARY"], visual: r["VISUAL"].lowercased() == "yes")
-                session!.units.append(u); instructions = u; current = nil; status = "הנחיות יחידה"
+                session!.units.append(u); instructions = u; current = nil; selfReport = nil; status = "הנחיות יחידה"
             }
         case "question":
             if session!.units.isEmpty { session!.units.append(Unit(title: "כללי", num: "", summary: "", visual: false)) }
@@ -521,7 +532,13 @@ func refreshWindowList() async {
             if let i = session!.units[ui].items.firstIndex(where: { $0.question == it.question || (!it.num.isEmpty && $0.num == it.num) }) {
                 session!.units[ui].items[i] = it                         // came back to a question: update, don't duplicate
             } else { session!.units[ui].items.append(it) }
-            if latest { current = it; instructions = nil; status = "" }
+            if latest { current = it; instructions = nil; selfReport = nil; status = "" }
+        case "self_report":
+            if latest {
+                selfReport = SelfReport(plain: r["PLAIN"], options: r["OPTIONS"].components(separatedBy: "|").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty },
+                                        neg: r["NEG"].lowercased() == "yes")
+                current = nil; instructions = nil; status = ""
+            }
         case "other":
             if latest { status = "ממתין לשאלה" }
         default:
@@ -655,6 +672,9 @@ struct Center: View {
                 } else {
                     Empty(icon: "play.circle", title: "מוכן", text: "פתח את הסימולטור ולחץ התחל (⌥⌘S).", action: nil)
                 }
+            } else if let sr = m.selfReport {
+                SelfReportCard(sr: sr, big: true)
+                Spacer()
             } else if let u = m.instructions {
                 Label("הנחיות יחידה", systemImage: "book").font(.system(size: 12, weight: .medium)).foregroundStyle(.purple)
                 Text("\(u.num.isEmpty ? "" : "יחידה \(u.num) · ")\(u.title)").font(.system(size: 26, weight: .semibold)).padding(.top, 12)
@@ -673,13 +693,26 @@ struct Center: View {
                 }.padding(.top, 20)
                 Spacer()
             }
-            if !m.status.isEmpty && !m.needsPermission {
+            if (!m.status.isEmpty || !m.timing.isEmpty) && !m.needsPermission {
                 HStack { Text(m.status).font(.system(size: 11)).foregroundStyle(.secondary); Spacer()
+                    if !m.timing.isEmpty { Text(m.timing).font(.system(size: 10)).foregroundStyle(.tertiary).monospacedDigit() }
                     if let it = m.current, !m.thinking { Text(String(format: "%.1f שנ׳", Double(it.ms) / 1000)).font(.system(size: 11)).foregroundStyle(.tertiary) } }
                 .padding(.top, 8)
             }
         }
         .padding(.horizontal, 28).padding(.vertical, 22)
+    }
+}
+
+// SELF_REPORT: what the statement really asks, and the options as they appear on screen. No recommendation.
+struct SelfReportCard: View {
+    let sr: Model.SelfReport; let big: Bool
+    var body: some View {
+        VStack(alignment: .leading, spacing: big ? 14 : 6) {
+            if big { Label("שאלון אישי · אין תשובה נכונה", systemImage: "person.text.rectangle").font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary) }
+            Text(sr.plain).font(.system(size: big ? 24 : 15, weight: .semibold)).fixedSize(horizontal: false, vertical: true)
+            Text(sr.options.joined(separator: "  |  ")).font(.system(size: big ? 14 : 11)).foregroundStyle(Color.accentColor).fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 
@@ -711,6 +744,7 @@ struct MiniView: View {
                 Button(action: onExpand) { Image(systemName: "arrow.up.left.and.arrow.down.right") }.buttonStyle(.plain).foregroundStyle(.secondary).help("חלון מלא (⌥⌘M)")
             }
             if m.thinking { Text("• • •").font(.system(size: 28, weight: .semibold)).foregroundStyle(.tertiary) }
+            else if let sr = m.selfReport { SelfReportCard(sr: sr, big: false) }
             else if let u = m.instructions { Text(u.title).font(.system(size: 20, weight: .semibold)); Text("הנחיות יחידה").font(.system(size: 11)).foregroundStyle(.purple) }
             else if let it = m.current { AnswerBlock(item: it, big: 28, showWhy: false) }
             else { Text(m.status.isEmpty ? "מוכן" : m.status).font(.system(size: 13)).foregroundStyle(.secondary) }
@@ -936,11 +970,15 @@ if args.count >= 3, args[1] == "--run-sim" {
     Task {
         var ctx = ""
         for path in args[2...] {
-            let img = loadImage(path), text = normalize((try? ocr(img)) ?? "")
+            let img = loadImage(path)
+            let t0 = Date(), text = normalize((try? ocr(img)) ?? ""), ocrMs = Int(Date().timeIntervalSince(t0) * 1000)
+            let t1 = Date()
             let r = try? await explain(img, text, context: ctx, visualUnit: true)
+            let srvMs = Int(Date().timeIntervalSince(t1) * 1000)
             let rep = Reply(r?.answer ?? "")
             if rep.kind == "instructions" { ctx = "Unit \(rep["NUM"]) \(rep["UNIT"]): \(rep["SUMMARY"])" }
-            print("\((path as NSString).lastPathComponent)\t\(rep.kind.isEmpty ? "error" : rep.kind)\t\(rep["ANSWER"])\t\(rep["CONF"])")
+            print([(path as NSString).lastPathComponent, rep.kind.isEmpty ? "error" : rep.kind, rep["ANSWER"], rep["CONF"],
+                   rep["PLAIN"], rep["OPTIONS"], rep["NEG"], String(ocrMs), String(srvMs)].joined(separator: "\t"))
             fflush(stdout)
         }
         sem.signal()

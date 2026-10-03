@@ -47,7 +47,9 @@ function render() {
     const q = u.qs[qi];
     $('meta').textContent = `פרק ${ui + 1}: ${u.name} · שאלה ${qi + 1} מתוך ${u.qs.length}`;
     $('stem').innerHTML = q.stem;
-    $('opts').innerHTML = q.opts.map((o, i) => `<label><input type=radio name=a><span class=lbl>${HE[i]}.</span><span>${o}</span></label>`).join('');
+    $('opts').style.gridTemplateColumns = u.sr ? `repeat(${q.opts.length}, 1fr)` : '1fr 1fr';
+    $('opts').innerHTML = q.opts.map((o, i) => u.sr ? `<label style="justify-content:center;text-align:center"><input type=radio name=a><span>${o}</span></label>`
+                                                   : `<label><input type=radio name=a><span class=lbl>${HE[i]}.</span><span>${o}</span></label>`).join('');
   }
 }
 function next() {

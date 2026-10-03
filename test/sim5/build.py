@@ -287,6 +287,13 @@ for ui, (name, instr, gen) in enumerate(UNITS):
     qs = qs[:PER_UNIT]
     data.append({"name": name, "instr": instr, "qs": [{k: v for k, v in q.items() if k != "ans"} for q in qs]})
     key.append({"unit": ui + 1, "name": name, "answers": [HE[q["ans"]] for q in qs]})
+# SELF_REPORT section: every item of test/self_report/bank.json, options as defined per item (no correct answer)
+SR = json.load(open(os.path.join(OUT, "..", "self_report", "bank.json")))
+if os.environ.get("SR_SHUFFLE"): R.shuffle(SR)
+data.append({"name": "שאלון אישי", "sr": True,
+             "instr": "בחלק זה יוצגו היגדים ושאלות על התנהגותך ועמדותיך. אין תשובות נכונות או שגויות. בחרו את התשובה המתארת אתכם בצורה הטובה ביותר.",
+             "qs": [{"stem": f"<b class=big>{i['text']}</b>", "opts": i["options"], "id": i["id"]} for i in SR]})
+key.append({"unit": len(data), "name": "SELF_REPORT", "items": SR})
 json.dump(key, open(os.path.join(OUT, "key.json"), "w"), ensure_ascii=False, indent=0)
 html = open(os.path.join(OUT, "template.html")).read().replace("/*DATA*/", json.dumps(data, ensure_ascii=False))
 open(os.path.join(OUT, "index.html"), "w").write(html)

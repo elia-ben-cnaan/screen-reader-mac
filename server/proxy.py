@@ -43,6 +43,8 @@ PROMPT = """You assist with a multiple-choice practice simulator (Hebrew or Engl
 First classify the screen:
 - INSTRUCTIONS: a unit/section intro explaining the question type or rules (no answer options to choose).
 - QUESTION: one active question with answer options.
+- SELF_REPORT: a statement or question about the test-taker's OWN behavior, habits, attitudes or opinions, answered on a
+  personal scale (yes/no, true/not true for me, agreement, frequency). It has no objectively correct answer.
 - OTHER: anything else (menu, loading, score, unrelated app).
 Reply with these lines only, no extra text. Write every value (Q, A, WHY, UNIT, SUMMARY) in the same language as the question on screen:
 For QUESTION:
@@ -61,6 +63,14 @@ NUM: <unit number if visible, else ->
 SUMMARY: <what to do in this unit, one sentence>
 VISUAL: <yes if questions in this unit are shapes/matrices/graphs, else no>
 PASSAGE: <yes if this screen is a reading passage for following questions, else no>
+For SELF_REPORT (never suggest, rank or hint which option to choose — only clarify the meaning):
+KIND: self_report
+PLAIN: <the statement's real meaning as ONE short, simple Hebrew question. Resolve negation and double negation
+  logically (e.g. "לא נכון לומר שמעולם לא..." -> ask the positive meaning). Keep every qualifier that changes meaning:
+  לא, מעולם, אף פעם, אי פעם, תמיד, בדרך כלל, לעיתים, לפעמים, רק, ללא פיקוח, בלי רשות. For frequency wording ask
+  "באיזו תדירות ...?" ; for agreement wording ask "עד כמה ...?" or "האם ...?">
+OPTIONS: <every response option visible on screen, exactly as written, in on-screen order, separated by " | ">
+NEG: <yes if the original wording contains a negation, else no>
 For OTHER:
 KIND: other
 
@@ -99,7 +109,7 @@ def tidy(out):
     lines = [l.strip().replace("**", "") for l in out.splitlines() if l.strip()]
     f = {l.split(":", 1)[0].strip().upper(): l.split(":", 1)[1].strip() for l in lines if ":" in l}
     if f.get("KIND", "").lower() != "question":
-        return "\n".join(lines)
+        return "\n".join(lines)   # instructions / self_report / other pass through
     lab = f.get("ANSWER", "").strip(" .)(")
     if not lab and f.get("A", "")[:1] in LABELS and f.get("A", "")[1:2] in (".", ")", " ", ""):
         lab = f["A"][0]; f["A"] = f["A"][1:].strip(" .)")
