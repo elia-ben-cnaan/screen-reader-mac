@@ -18,7 +18,8 @@ cat > "$APP/Contents/Info.plist" <<P
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>0.1</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
-<key>LSUIElement</key><true/>
+<key>LSUIElement</key><false/>
+<key>CFBundleDevelopmentRegion</key><string>he</string>
 <key>NSAppTransportSecurity</key><dict><key>NSAllowsArbitraryLoads</key><true/></dict>
 <key>NSScreenCaptureUsageDescription</key><string>Reads visible text locally with Apple Vision.</string>
 </dict></plist>

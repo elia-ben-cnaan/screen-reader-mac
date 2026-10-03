@@ -1,6 +1,8 @@
 // ScreenReader — passive screen text reader (macOS 14+). Single file, no deps.
 // Capture (ScreenCaptureKit, in memory) -> cheap frame fingerprint -> Apple Vision OCR only on change -> panel.
 import Cocoa
+import SwiftUI
+import Carbon.HIToolbox
 import Vision
 import ScreenCaptureKit
 
@@ -159,26 +161,28 @@ func questionKey(_ text: String, _ image: CGImage, _ l: Layout) -> String {
 nonisolated(unsafe) var answerCache: [String: (mode: String, answer: String)] = [:]
 
 // TEXT -> text only; VISUAL/MIXED -> cropped screenshot + text. Repeated question -> cached, no request.
-func explain(_ image: CGImage, _ screenText: String, _ onPartial: @escaping @Sendable (String) -> Void = { _ in }) async throws -> (mode: String, answer: String, cached: Bool) {
+// context = current unit instructions (+ reading passage); visualUnit = always send the image.
+func explain(_ image: CGImage, _ screenText: String, context: String = "", visualUnit: Bool = false,
+             _ onPartial: @escaping @Sendable (String) -> Void = { _ in }) async throws -> (mode: String, answer: String, cached: Bool) {
     let l = layout(image)
-    let key = questionKey(screenText, image, l)
+    let key = questionKey(screenText, image, l) + "|" + String(context.hashValue)
     if let c = answerCache[key] { return (c.mode, c.answer, true) }
-    let png = l.visual ? croppedPNG(image, l.crop) : nil
+    let png = l.visual ? croppedPNG(image, l.crop) : visualUnit ? croppedPNG(image, CGRect(x: 0, y: 0, width: image.width, height: image.height)) : nil
     let mode = png == nil ? "TEXT" : "VISUAL"
-    let answer = try await ask(screenText, png, onPartial)
+    let answer = try await ask(screenText, png, context, onPartial)
     answerCache[key] = (mode, answer)
     return (mode, answer, false)
 }
 
 // Streams the answer from the server; onPartial gets the text so far.
-func ask(_ text: String, _ png: Data?, _ onPartial: @escaping @Sendable (String) -> Void) async throws -> String {
+func ask(_ text: String, _ png: Data?, _ context: String, _ onPartial: @escaping @Sendable (String) -> Void) async throws -> String {
     let c = serverConfig()
     guard let url = URL(string: c.url + "/ask"), !c.token.isEmpty else { return "No server configured (\(serverFile))." }
     var r = URLRequest(url: url)
     r.httpMethod = "POST"; r.timeoutInterval = 60
     r.setValue("application/json", forHTTPHeaderField: "content-type")
     r.setValue(c.token, forHTTPHeaderField: "X-Token")
-    r.httpBody = try JSONSerialization.data(withJSONObject: ["text": text, "image": png?.base64EncodedString() as Any])
+    r.httpBody = try JSONSerialization.data(withJSONObject: ["text": text, "image": png?.base64EncodedString() as Any, "context": context])
     let (bytes, resp) = try await URLSession.shared.bytes(for: r)
     var acc = ""
     for try await line in bytes.lines { acc += (acc.isEmpty ? "" : "\n") + line; onPartial(acc) }
@@ -286,211 +290,507 @@ func captureScreen() async throws -> CGImage {
     func finish(_ r: CGRect?) { orderOut(nil); done?(r); done = nil }
 }
 
-// MARK: App — small native window: what's on screen, the answer, nothing else.
-// Server reply lines: "ANSWER: ג" / "Q: <question>" / "A: <answer>". Parsed as they stream in.
-func parseReply(_ s: String) -> (label: String?, q: String?, a: String?) {
-    var label: String?, q: String?, a: String?
-    for line in s.split(whereSeparator: \.isNewline) {
-        let l = line.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: "**", with: "")
-        if l.hasPrefix("ANSWER:") { let v = l.dropFirst(7).trimmingCharacters(in: .whitespaces); label = v == "-" || v.isEmpty ? nil : v }
-        else if l.hasPrefix("Q:") { q = l.dropFirst(2).trimmingCharacters(in: .whitespaces) }
-        else if l.hasPrefix("A:") { a = l.dropFirst(2).trimmingCharacters(in: .whitespaces) }
-    }
-    return (label, q, a)
-}
+// MARK: Session model — units (from instruction screens) holding answered questions. Saved as JSON while running.
+struct Item: Codable, Identifiable { var id = UUID(); var num: String; var question: String; var answer: String; var label: String; var why: String; var low: Bool; var ms: Int }
+struct Unit: Codable, Identifiable { var id = UUID(); var title: String; var num: String; var summary: String; var visual: Bool; var passage = ""; var items: [Item] = [] }
+struct Session: Codable { var start = Date(); var end: Date?; var units: [Unit] = [] }
+let sessionURL: URL = {
+    let d = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("ScreenReader")
+    try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+    return d.appendingPathComponent("session.json")
+}()
 
-@MainActor final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
-    let sourceMenu = NSMenu()
-    var picker: RegionPicker?
-    enum State { case idle, reading, paused, error }
-    var panel: NSPanel!
-    let dot = NSTextField(labelWithString: "●")
-    let status = NSTextField(labelWithString: "")
-    let onScreen = NSTextField(labelWithString: "על המסך")
-    let question = NSTextField(wrappingLabelWithString: "")
-    let answer = NSTextField(labelWithString: "")
-    let label = NSTextField(labelWithString: "")
-    var timer: Timer?
-    var busy = false
-    var lastPrint: [UInt8] = []
-    var lastText = ""
-    var lastImage: CGImage?          // latest frame, memory only; replaced every capture
-    var askTask: Task<Void, Never>?
-    var state: State = .idle { didSet { render() } }
-    var statusItem: NSStatusItem!
-    let pauseItem = NSMenuItem(title: "השהה", action: #selector(toggleRun), keyEquivalent: "p")
-
-    // Menu bar icon (top of screen): pause/resume, show/hide window, quit.
-    func setupMenuBar() {
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.image = NSImage(systemSymbolName: "text.viewfinder", accessibilityDescription: "קורא מסך")
-        let m = NSMenu()
-        pauseItem.target = self; m.addItem(pauseItem)
-        let src = NSMenuItem(title: "מה לקרוא", action: nil, keyEquivalent: "")
-        src.submenu = sourceMenu; sourceMenu.delegate = self; m.addItem(src)
-        let show = NSMenuItem(title: "הצג / הסתר חלון", action: #selector(toggleWindow), keyEquivalent: "h"); show.target = self; m.addItem(show)
-        m.addItem(.separator())
-        let quit = NSMenuItem(title: "יציאה", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"); m.addItem(quit)
-        statusItem.menu = m
-    }
-    nonisolated func menuNeedsUpdate(_ menu: NSMenu) {
-        MainActor.assumeIsolated {
-            menu.removeAllItems()
-            func add(_ t: String, _ on: Bool, _ sel: Selector, _ tag: Int = 0) {
-                let i = NSMenuItem(title: t, action: sel, keyEquivalent: ""); i.target = self; i.tag = tag; i.state = on ? .on : .off; menu.addItem(i)
-            }
-            add("כל המסך", source == .screen, #selector(pickScreen))
-            if case .region = source { add("אזור נבחר ✓ (סמן מחדש…)", true, #selector(pickRegion)) } else { add("סמן אזור…", false, #selector(pickRegion)) }
-            menu.addItem(.separator())
-            let h = NSMenuItem(title: "חלון מסוים:", action: nil, keyEquivalent: ""); h.isEnabled = false; menu.addItem(h)
-            var curID: CGWindowID = 0
-            if case .window(_, let id, _) = source { curID = id }
-            for (n, w) in visibleWindows.enumerated() { add(w.name, w.windowID == curID, #selector(pickWindow(_:)), n) }
-            if visibleWindows.isEmpty { let e = NSMenuItem(title: "(הפעל קריאה כדי לראות חלונות)", action: nil, keyEquivalent: ""); e.isEnabled = false; menu.addItem(e) }
+// Server reply: "KEY: value" lines (format in server/proxy.py).
+struct Reply {
+    var f: [String: String] = [:]
+    var checking = false
+    init(_ s: String) {
+        for line in s.split(whereSeparator: \.isNewline) {
+            let l = line.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: "**", with: "")
+            if l == "CHECKING" { checking = true; continue }
+            if let i = l.firstIndex(of: ":") { f[String(l[..<i]).uppercased()] = l[l.index(after: i)...].trimmingCharacters(in: .whitespaces) }
         }
     }
-    func setSource(_ s: Source) { source = s; s.save(); lastPrint = []; lastText = ""; render(); if state != .reading { start() } }
-    @objc func pickScreen() { setSource(.screen) }
-    @objc func pickWindow(_ i: NSMenuItem) { guard i.tag < visibleWindows.count else { return }; let w = visibleWindows[i.tag]; setSource(.window(bundleID: w.bundleID, windowID: w.windowID, name: w.name)) }
-    @objc func pickRegion() {
+    subscript(_ k: String) -> String { let v = f[k] ?? ""; return v == "-" ? "" : v }
+    var kind: String { self["KIND"].lowercased() }
+}
+
+func refreshWindowList() async {
+    guard let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true) else { return }
+    let me = ProcessInfo.processInfo.processIdentifier
+    visibleWindows = content.windows.filter { w in
+        guard let app = w.owningApplication, app.processID != me, w.windowLayer == 0, w.frame.width > 200, w.frame.height > 150 else { return false }
+        return true
+    }.map { w in
+        let app = w.owningApplication!.applicationName, t = w.title ?? ""
+        return (w.owningApplication!.bundleIdentifier, w.windowID, t.isEmpty ? app : "\(app) — \(t.prefix(40))")
+    }
+}
+
+// MARK: Model
+@MainActor final class Model: ObservableObject {
+    enum Phase { case idle, running, paused }
+    @Published var phase = Phase.idle
+    @Published var session: Session?
+    @Published var current: Item?
+    @Published var instructions: Unit?          // last screen was a unit intro
+    @Published var status = ""                  // waiting / thinking / errors
+    @Published var thinking = false
+    @Published var pending = ""                 // question text while thinking
+    @Published var sourceLabel = source.label
+    @Published var windows: [(bundleID: String, windowID: CGWindowID, name: String)] = []
+    @Published var showSummary = false
+    @Published var needsPermission = false
+    var hasChosenSource: Bool { UserDefaults.standard.string(forKey: "source") != nil }
+    var onFloat: (() -> Void)?
+    var picker: RegionPicker?
+    private var timer: Timer?, busy = false, lastPrint: [UInt8] = [], lastText = "", lastImage: CGImage?, askTask: Task<Void, Never>?
+
+    init() {
+        if let d = try? Data(contentsOf: sessionURL), let s = try? JSONDecoder().decode(Session.self, from: d), s.end == nil, !s.units.isEmpty {
+            session = s; phase = .paused; status = "סשן קודם נשמר · ⌥⌘P להמשך"   // app closed mid-session: nothing lost
+            current = s.units.last?.items.last
+        }
+    }
+
+    var unit: Unit? { session?.units.last }
+    func save() { if let s = session, let d = try? JSONEncoder().encode(s) { try? d.write(to: sessionURL) } }
+
+    func loadWindows() { Task { await refreshWindowList(); windows = visibleWindows } }
+    func setSource(_ s: Source) { source = s; s.save(); sourceLabel = s.label; lastPrint = []; lastText = "" }
+    func pickRegion() {
         picker = RegionPicker { [weak self] r in if let r { self?.setSource(.region(r)) }; self?.picker = nil }
         picker?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
     }
-    @objc func toggleWindow() { panel.isVisible ? panel.orderOut(nil) : panel.orderFrontRegardless() }
 
-    func applicationDidFinishLaunching(_ n: Notification) {
-        setupMenuBar()
-        panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 360, height: 260),
-                        styleMask: [.titled, .closable, .nonactivatingPanel],
-                        backing: .buffered, defer: false)
-        panel.title = "קורא מסך"
-        panel.level = .floating
-        panel.isFloatingPanel = true
-        panel.isMovableByWindowBackground = true
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.setFrameTopLeftPoint(NSPoint(x: (NSScreen.main?.visibleFrame.maxX ?? 800) - 380,
-                                           y: (NSScreen.main?.visibleFrame.maxY ?? 800) - 20))
-        dot.font = .systemFont(ofSize: 10)
-        status.font = .systemFont(ofSize: 12); status.textColor = .secondaryLabelColor
-        onScreen.font = .systemFont(ofSize: 12, weight: .medium); onScreen.textColor = .secondaryLabelColor
-        question.font = .systemFont(ofSize: 15); question.maximumNumberOfLines = 3
-        question.lineBreakMode = .byTruncatingTail; question.preferredMaxLayoutWidth = 312
-        answer.font = .systemFont(ofSize: 34, weight: .bold)
-        answer.lineBreakMode = .byTruncatingTail; answer.allowsDefaultTighteningForTruncation = true
-        label.font = .systemFont(ofSize: 14, weight: .semibold); label.textColor = .systemBlue
-        for f in [status, onScreen, question, answer, label] { f.alignment = .right; f.baseWritingDirection = .rightToLeft }
-
-        let statusRow = NSStackView(views: [dot, status])
-        statusRow.spacing = 6; statusRow.userInterfaceLayoutDirection = .rightToLeft
-        let click = NSClickGestureRecognizer(target: self, action: #selector(toggleRun))
-        statusRow.addGestureRecognizer(click)                  // click the status line = start / pause
-        statusRow.toolTip = "לחיצה: הפעלה / השהיה"
-
-        let stack = NSStackView(views: [statusRow, onScreen, question, answer, label])
-        stack.orientation = .vertical; stack.alignment = .centerX; stack.spacing = 8
-        stack.setCustomSpacing(18, after: statusRow); stack.setCustomSpacing(18, after: question)
-        stack.setCustomSpacing(2, after: answer)
-        stack.edgeInsets = NSEdgeInsets(top: 16, left: 24, bottom: 20, right: 24)
-        for v in [statusRow, onScreen, question, answer, label] as [NSView] {   // full width minus margins; text right-aligned
-            v.translatesAutoresizingMaskIntoConstraints = false
-            v.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -48).isActive = true
-        }
-        let bg = NSVisualEffectView(); bg.material = .popover; bg.blendingMode = .behindWindow; bg.state = .active
-        bg.addSubview(stack); stack.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: bg.topAnchor), stack.bottomAnchor.constraint(lessThanOrEqualTo: bg.bottomAnchor),
-            stack.leadingAnchor.constraint(equalTo: bg.leadingAnchor), stack.trailingAnchor.constraint(equalTo: bg.trailingAnchor),
-            stack.widthAnchor.constraint(equalToConstant: 360),
-        ])
-        panel.contentView = bg
-        panel.orderFrontRegardless()
-        render()
-        start()                                                 // automatic from launch
+    // ⌥⌘S
+    func startStop() {
+        if phase == .idle { start() } else { finish() }
     }
-    func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { false }   // closing the window hides it; quit from the menu bar icon
-
-    func render() {
-        let (text, color): (String, NSColor) = switch state {
-            case .idle: ("מוכן", .secondaryLabelColor)
-            case .reading: ("מקליט · \(source.label)", .systemRed)
-            case .paused: ("מושהה · לחץ להמשך", .systemOrange)
-            case .error: ("שגיאה", .systemRed)
-        }
-        status.stringValue = text; dot.textColor = color
-        pauseItem.title = state == .reading ? "השהה" : "הפעל"
-    }
-
-    func showAnswer(_ q: String, _ a: String, _ l: String) {
-        question.stringValue = q; answer.stringValue = a; label.stringValue = l
-        answer.textColor = .labelColor
-    }
-    func showThinking(_ q: String) { showAnswer(q, "• • •", ""); answer.textColor = .tertiaryLabelColor }
-
-    @objc func toggleRun() { state == .reading ? pause() : start() }
-
-    // New question on screen -> cancel the old request, ask about the new one.
-    func askAuto(_ img: CGImage, _ text: String) {
-        askTask?.cancel()
-        let preview = text.split(whereSeparator: \.isNewline).prefix(3).joined(separator: " ")
-        showThinking(preview)
-        askTask = Task {
-            let r = try? await Task.detached {
-                try await explain(img, text) { p in
-                    Task { @MainActor in
-                        let x = parseReply(p)
-                        if let q = x.q { self.question.stringValue = q }
-                        if let a = x.a, !a.isEmpty { self.answer.stringValue = a; self.answer.textColor = .labelColor }
-                    }
-                }
-            }.value
-            guard !Task.isCancelled else { return }
-            guard let r else { showAnswer(preview, "אין חיבור", "השרת לא ענה"); return }
-            let x = parseReply(r.answer)
-            if x.a == nil { showAnswer(preview, "—", String(r.answer.prefix(80))); return }   // server message / error
-            showAnswer(x.q ?? preview, x.a!, x.label.map { "תשובה \($0)" } ?? "")
-        }
-    }
-
     func start() {
-        if !CGPreflightScreenCaptureAccess() {
-            CGRequestScreenCaptureAccess()
-            state = .error
-            showAnswer("System Settings ← Privacy & Security ← Screen & System Audio Recording ← הפעל את ScreenReader, ואז סגור ופתח מחדש.",
-                       "צריך הרשאה", "הקלטת מסך")
-            return
-        }
-        state = .reading
-        lastPrint = []   // force fresh OCR on resume
+        guard CGPreflightScreenCaptureAccess() else { CGRequestScreenCaptureAccess(); needsPermission = true; return }
+        needsPermission = false
+        if session == nil || session?.end != nil { session = Session(); current = nil; instructions = nil }
+        phase = .running; status = "ממתין לשאלה"; lastPrint = []; lastText = ""
         tick()
-        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { _ in
-            Task { @MainActor in self.tick() }
-        }
+        timer?.invalidate()
+        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { _ in Task { @MainActor in self.tick() } }
         timer?.tolerance = 0.3
     }
-    func pause() { timer?.invalidate(); timer = nil; askTask?.cancel(); state = .paused }
+    func finish() {
+        timer?.invalidate(); timer = nil; askTask?.cancel(); thinking = false
+        session?.end = Date(); save(); phase = .idle; status = ""
+        if session?.units.isEmpty == false { showSummary = true }
+    }
+    // ⌥⌘P
+    func pauseResume() {
+        switch phase {
+        case .running: timer?.invalidate(); timer = nil; askTask?.cancel(); thinking = false; phase = .paused; status = "מושהה"
+        case .paused: start()
+        case .idle: start()
+        }
+    }
+    // ⌥⌘R: ask again about what's on screen now, bypassing the cache
+    func askAgain() {
+        guard let img = lastImage, !lastText.isEmpty else { return }
+        answerCache.removeAll(); handle(img, lastText, replace: true)
+    }
 
     func tick() {
-        guard state == .reading, !busy else { return }
+        guard phase == .running, !busy else { return }
         busy = true
         Task {
             defer { busy = false }
             do {
-                let img = try await capture()
+                let img = try await captureScreen()
+                windows = visibleWindows
                 let fp = fingerprint(img)
                 if diff(fp, lastPrint) < changeThreshold { return }
-                lastPrint = fp
-                lastImage = img
+                lastPrint = fp; lastImage = img
                 let text = try await Task.detached(priority: .utility) { normalize(try ocr(img)) }.value
                 let stable = text.replacingOccurrences(of: #"\b\d{1,2}:\d{2}(:\d{2})?\b"#, with: "", options: .regularExpression)
-                if stable != lastText, !text.isEmpty { lastText = stable; askAuto(img, text) }   // clock ticking != new question
+                if stable != lastText, !text.isEmpty { lastText = stable; handle(img, text) }   // clock ticking != new screen
             } catch {
-                state = .error; timer?.invalidate(); timer = nil
-                showAnswer(error.localizedDescription, "שגיאה", "")
+                status = error.localizedDescription      // e.g. chosen window closed; keep trying
             }
         }
     }
 
-    func capture() async throws -> CGImage { try await captureScreen() }
+    func context() -> String {
+        guard let u = unit else { return "" }
+        return "Unit \(u.num) \(u.title): \(u.summary)" + (u.passage.isEmpty ? "" : "\nREADING PASSAGE:\n\(u.passage)")
+    }
+
+    func handle(_ img: CGImage, _ text: String, replace: Bool = false) {
+        askTask?.cancel()
+        let ctx = context(), visual = unit?.visual ?? false
+        let t0 = Date()
+        pending = text.split(whereSeparator: \.isNewline).prefix(2).joined(separator: " ")
+        thinking = true; status = "חושב…"
+        askTask = Task {
+            let r = try? await Task.detached {
+                try await explain(img, text, context: ctx, visualUnit: visual) { p in
+                    if Reply(p).checking { Task { @MainActor in self.status = "בודק שוב…" } }
+                }
+            }.value
+            guard !Task.isCancelled else { return }
+            thinking = false
+            guard let r else { status = "אין חיבור לשרת"; return }
+            apply(Reply(r.answer), raw: r.answer, ms: Int(Date().timeIntervalSince(t0) * 1000), replace: replace)
+        }
+    }
+
+    func apply(_ r: Reply, raw: String, ms: Int, replace: Bool) {
+        if session == nil { session = Session() }
+        switch r.kind {
+        case "instructions":
+            if r["PASSAGE"].lowercased() == "yes", !session!.units.isEmpty {
+                session!.units[session!.units.count - 1].passage = String((unit!.passage + "\n" + lastText).suffix(6000))
+                status = "קטע קריאה נשמר"
+            } else {
+                let u = Unit(title: r["UNIT"].isEmpty ? "יחידה" : r["UNIT"], num: r["NUM"], summary: r["SUMMARY"], visual: r["VISUAL"].lowercased() == "yes")
+                session!.units.append(u); instructions = u; current = nil; status = "הנחיות יחידה"
+            }
+        case "question":
+            if session!.units.isEmpty { session!.units.append(Unit(title: "כללי", num: "", summary: "", visual: false)) }
+            let it = Item(num: r["NUM"], question: r["Q"], answer: r["A"], label: r["ANSWER"], why: r["WHY"], low: r["CONF"].lowercased() == "low", ms: ms)
+            let ui = session!.units.count - 1
+            if let i = session!.units[ui].items.firstIndex(where: { $0.question == it.question || (!it.num.isEmpty && $0.num == it.num) }) {
+                session!.units[ui].items[i] = it                         // came back to a question: update, don't duplicate
+            } else { session!.units[ui].items.append(it) }
+            current = it; instructions = nil; status = ""
+        case "other":
+            status = "ממתין לשאלה"
+        default:
+            status = String(raw.prefix(120))                           // server message / error
+        }
+        save()
+    }
+
+    func summaryText() -> String {
+        guard let s = session else { return "" }
+        var out = "ScreenReader · \(s.start.formatted(date: .abbreviated, time: .shortened))\n"
+        for u in s.units {
+            out += "\nיחידה \(u.num) · \(u.title)\n"
+            for (i, it) in u.items.enumerated() { out += "\(it.num.isEmpty ? String(i + 1) : it.num). \(it.label) · \(it.answer)\(it.low ? " (?)" : "")\n" }
+        }
+        return out
+    }
+}
+
+// MARK: Views
+let answerFont = Font.system(size: 44, weight: .semibold)
+
+struct AnswerBlock: View {
+    let item: Item; var big: CGFloat = 44; var showWhy = true
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(item.answer.isEmpty ? item.label : item.answer).font(.system(size: big, weight: .semibold)).lineLimit(2).minimumScaleFactor(0.5)
+                if item.low { Text("?").font(.system(size: big * 0.45, weight: .semibold)).foregroundStyle(.orange).help("המודל לא בטוח — כדאי לבדוק") }
+            }
+            if !item.label.isEmpty { Text("תשובה \(item.label)").font(.system(size: big * 0.34, weight: .semibold)).foregroundStyle(Color.accentColor) }
+            if showWhy, !item.why.isEmpty { Text(item.why).font(.system(size: 12)).foregroundStyle(.secondary).padding(.top, 6) }
+        }
+    }
+}
+
+struct SourceMenu: View {
+    @ObservedObject var m: Model
+    var body: some View {
+        Menu {
+            Button("כל המסך") { m.setSource(.screen) }
+            Button("סמן אזור…") { m.pickRegion() }
+            Divider()
+            Section("חלון מסוים") {
+                ForEach(Array(m.windows.enumerated()), id: \.offset) { _, w in
+                    Button(w.name) { m.setSource(.window(bundleID: w.bundleID, windowID: w.windowID, name: w.name)) }
+                }
+            }
+        } label: { Label(m.sourceLabel, systemImage: "macwindow") }
+        .menuStyle(.borderlessButton).fixedSize()
+        .simultaneousGesture(TapGesture().onEnded { m.loadWindows() })
+        .help("מה האפליקציה קוראת")
+    }
+}
+
+struct MainView: View {
+    @ObservedObject var m: Model
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Text("ScreenReader").font(.system(size: 13, weight: .semibold))
+                if m.phase != .idle { Circle().fill(m.phase == .running ? .red : .orange).frame(width: 7, height: 7) }
+                Spacer()
+                SourceMenu(m: m)
+                Button { m.onFloat?() } label: { Image(systemName: "pip.enter") }.help("חלון צף (⌥⌘M)")
+                Button { m.startStop() } label: {
+                    Label(m.phase == .idle ? "התחל" : "סיים", systemImage: m.phase == .idle ? "play.fill" : "stop.fill")
+                }
+                .keyboardShortcut(.return, modifiers: .command)
+                .buttonStyle(.borderedProminent).tint(m.phase == .idle ? .accentColor : .red)
+                .help("⌥⌘S")
+            }
+            .padding(.horizontal, 14).padding(.vertical, 10)
+            Divider()
+            HStack(spacing: 0) {
+                Sidebar(m: m).frame(width: 210)
+                Divider()
+                Center(m: m).frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .frame(minWidth: 560, minHeight: 360)
+        .environment(\.layoutDirection, .rightToLeft)
+        .sheet(isPresented: $m.showSummary) { SummaryView(m: m) }
+        .onAppear { m.loadWindows() }
+    }
+}
+
+struct Sidebar: View {
+    @ObservedObject var m: Model
+    var body: some View {
+        List {
+            if let s = m.session {
+                ForEach(s.units) { u in
+                    Section("\(u.num.isEmpty ? "" : "יחידה \(u.num) · ")\(u.title)") {
+                        ForEach(Array(u.items.enumerated()), id: \.element.id) { i, it in
+                            HStack {
+                                Text("\(it.num.isEmpty ? String(i + 1) : it.num) · \(it.label)").monospacedDigit()
+                                Spacer()
+                                if it.low { Text("?").foregroundStyle(.orange) }
+                            }
+                            .contentShape(Rectangle())
+                            .onTapGesture { m.current = it; m.instructions = nil }
+                            .listRowBackground(m.current?.id == it.id ? Color.accentColor.opacity(0.15) : nil)
+                        }
+                    }
+                }
+            }
+        }
+        .listStyle(.sidebar)
+        .overlay { if m.session?.units.isEmpty ?? true { Text("השאלות יופיעו כאן").font(.callout).foregroundStyle(.tertiary) } }
+    }
+}
+
+struct Center: View {
+    @ObservedObject var m: Model
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if m.needsPermission {
+                Empty(icon: "lock.shield", title: "צריך הרשאת הקלטת מסך",
+                      body: "הפעל את ScreenReader ברשימה, ואז סגור ופתח את האפליקציה.",
+                      action: ("פתח הגדרות", { NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!) }))
+            } else if m.phase == .idle && m.current == nil {
+                if !m.hasChosenSource {
+                    Empty(icon: "macwindow", title: "מה לקרוא?", body: "בחר את חלון הסימולטור מהתפריט למעלה, ואז לחץ התחל.", action: nil)
+                } else {
+                    Empty(icon: "play.circle", title: "מוכן", body: "פתח את הסימולטור ולחץ התחל (⌥⌘S).", action: nil)
+                }
+            } else if let u = m.instructions {
+                Label("הנחיות יחידה", systemImage: "book").font(.system(size: 12, weight: .medium)).foregroundStyle(.purple)
+                Text("\(u.num.isEmpty ? "" : "יחידה \(u.num) · ")\(u.title)").font(.system(size: 26, weight: .semibold)).padding(.top, 12)
+                Text(u.summary).font(.system(size: 14)).foregroundStyle(.secondary).padding(.top, 6)
+                Spacer()
+                if u.visual { Label("ביחידה הזו נשלחת תמונה עם כל שאלה", systemImage: "photo").font(.system(size: 12)).foregroundStyle(.secondary) }
+            } else {
+                if let u = m.unit {
+                    Text("\(u.num.isEmpty ? "" : "יחידה \(u.num) · ")\(u.title)\(m.current?.num.isEmpty == false ? " · שאלה \(m.current!.num)" : "")")
+                        .font(.system(size: 12, weight: .medium)).foregroundStyle(Color.accentColor)
+                }
+                Text(m.thinking ? m.pending : (m.current?.question ?? "")).font(.system(size: 15)).lineLimit(3).padding(.top, 10)
+                Group {
+                    if m.thinking { Text("• • •").font(answerFont).foregroundStyle(.tertiary) }
+                    else if let it = m.current { AnswerBlock(item: it) }
+                }.padding(.top, 20)
+                Spacer()
+            }
+            if !m.status.isEmpty && !m.needsPermission {
+                HStack { Text(m.status).font(.system(size: 11)).foregroundStyle(.secondary); Spacer()
+                    if let it = m.current, !m.thinking { Text(String(format: "%.1f שנ׳", Double(it.ms) / 1000)).font(.system(size: 11)).foregroundStyle(.tertiary) } }
+                .padding(.top, 8)
+            }
+        }
+        .padding(.horizontal, 28).padding(.vertical, 22)
+    }
+}
+
+struct Empty: View {
+    let icon: String, title: String, body: String; let action: (String, () -> Void)?
+    var body: some View {
+        VStack(spacing: 10) {
+            Spacer()
+            Image(systemName: icon).font(.system(size: 34)).foregroundStyle(.tertiary)
+            Text(title).font(.system(size: 17, weight: .semibold))
+            Text(self.body).font(.system(size: 13)).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            if let a = action { Button(a.0, action: a.1).padding(.top, 4) }
+            Spacer()
+        }.frame(maxWidth: .infinity)
+    }
+}
+
+struct MiniView: View {
+    @ObservedObject var m: Model
+    var onExpand: () -> Void
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Circle().fill(m.phase == .running ? .red : .orange).frame(width: 6, height: 6)
+                Text(miniTitle).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                Spacer()
+                Button(action: onExpand) { Image(systemName: "arrow.up.left.and.arrow.down.right") }.buttonStyle(.plain).foregroundStyle(.secondary).help("חלון מלא (⌥⌘M)")
+            }
+            if m.thinking { Text("• • •").font(.system(size: 28, weight: .semibold)).foregroundStyle(.tertiary) }
+            else if let u = m.instructions { Text(u.title).font(.system(size: 20, weight: .semibold)); Text("הנחיות יחידה").font(.system(size: 11)).foregroundStyle(.purple) }
+            else if let it = m.current { AnswerBlock(item: it, big: 28, showWhy: false) }
+            else { Text(m.status.isEmpty ? "מוכן" : m.status).font(.system(size: 13)).foregroundStyle(.secondary) }
+        }
+        .padding(12).frame(width: 220, alignment: .leading)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .environment(\.layoutDirection, .rightToLeft)
+    }
+    var miniTitle: String {
+        let u = m.unit.map { "\($0.num.isEmpty ? "" : "יחידה \($0.num) · ")\($0.title)" } ?? m.sourceLabel
+        return u + (m.current?.num.isEmpty == false ? " · שאלה \(m.current!.num)" : "")
+    }
+}
+
+struct SummaryView: View {
+    @ObservedObject var m: Model
+    @Environment(\.dismiss) var dismiss
+    var body: some View {
+        let s = m.session ?? Session()
+        let items = s.units.flatMap(\.items)
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("סיכום סשן").font(.system(size: 17, weight: .semibold)); Spacer()
+                Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(m.summaryText(), forType: .string) } label: { Label("העתק", systemImage: "doc.on.doc") }
+                Button("סגור") { dismiss() }.keyboardShortcut(.defaultAction)
+            }
+            HStack(spacing: 10) {
+                Stat(title: "שאלות", value: "\(items.count)")
+                Stat(title: "זמן כולל", value: Duration.seconds((s.end ?? Date()).timeIntervalSince(s.start)).formatted(.time(pattern: .hourMinuteSecond)))
+                Stat(title: "ממוצע לתשובה", value: items.isEmpty ? "—" : String(format: "%.1f שנ׳", Double(items.map(\.ms).reduce(0, +)) / Double(items.count) / 1000))
+                Stat(title: "לבדיקה (?)", value: "\(items.filter(\.low).count)", tint: .orange)
+            }
+            List {
+                ForEach(s.units) { u in
+                    DisclosureGroup {
+                        ForEach(Array(u.items.enumerated()), id: \.element.id) { i, it in
+                            HStack { Text("\(it.num.isEmpty ? String(i + 1) : it.num). \(it.label) · \(it.answer)"); Spacer(); if it.low { Text("?").foregroundStyle(.orange) } }
+                                .help(it.question)
+                        }
+                    } label: {
+                        HStack { Text("\(u.num.isEmpty ? "" : "יחידה \(u.num) · ")\(u.title)").fontWeight(.medium); Spacer()
+                            Text("\(u.items.count) שאלות").foregroundStyle(.secondary)
+                            if u.items.contains(where: \.low) { Text("· ? \(u.items.filter(\.low).count)").foregroundStyle(.orange) } }
+                    }
+                }
+            }
+            .listStyle(.inset)
+        }
+        .padding(20).frame(width: 560, height: 480)
+        .environment(\.layoutDirection, .rightToLeft)
+    }
+}
+
+struct Stat: View {
+    let title: String, value: String; var tint: Color = .primary
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.system(size: 11)).foregroundStyle(.secondary)
+            Text(value).font(.system(size: 20, weight: .semibold)).foregroundStyle(tint).monospacedDigit()
+        }.padding(10).frame(maxWidth: .infinity, alignment: .leading).background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+// MARK: Global shortcuts (⌥⌘ + S/P/R/M) — Carbon hotkeys, work while the simulator has focus, no extra permission.
+nonisolated(unsafe) var hotkeyActions: [UInt32: @MainActor () -> Void] = [:]
+nonisolated(unsafe) var hotkeyRefs: [EventHotKeyRef?] = []
+@MainActor func registerHotkeys(_ map: [(Int, @MainActor () -> Void)]) {
+    var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+    InstallEventHandler(GetApplicationEventTarget(), { _, ev, _ in
+        var hk = EventHotKeyID()
+        GetEventParameter(ev, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil, MemoryLayout<EventHotKeyID>.size, nil, &hk)
+        let id = hk.id
+        DispatchQueue.main.async { MainActor.assumeIsolated { hotkeyActions[id]?() } }
+        return noErr
+    }, 1, &spec, nil, nil)
+    for (i, (key, action)) in map.enumerated() {
+        var ref: EventHotKeyRef?
+        RegisterEventHotKey(UInt32(key), UInt32(optionKey | cmdKey), EventHotKeyID(signature: OSType(0x53524452), id: UInt32(i + 1)), GetApplicationEventTarget(), 0, &ref)
+        hotkeyRefs.append(ref); hotkeyActions[UInt32(i + 1)] = action
+    }
+}
+
+// MARK: App — normal window (resize / full screen) + floating card over the simulator.
+@MainActor final class App: NSObject, NSApplicationDelegate {
+    let m = Model()
+    var window: NSWindow!
+    var panel: NSPanel!
+
+    func applicationDidFinishLaunching(_ n: Notification) {
+        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 470),
+                          styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        window.title = "ScreenReader"; window.titleVisibility = .hidden
+        window.contentView = NSHostingView(rootView: MainView(m: m))
+        window.center(); window.setFrameAutosaveName("main"); window.collectionBehavior = [.fullScreenPrimary]
+        window.makeKeyAndOrderFront(nil)
+
+        panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 220, height: 130), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.level = .floating; panel.isFloatingPanel = true; panel.isMovableByWindowBackground = true
+        panel.backgroundColor = .clear; panel.isOpaque = false; panel.hasShadow = true
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]   // floats over a full-screen simulator
+        let host = NSHostingView(rootView: MiniView(m: m, onExpand: { [weak self] in self?.toggleFloat() }))
+        host.sizingOptions = [.intrinsicContentSize]
+        panel.contentView = host
+        panel.setFrameAutosaveName("mini")
+        if panel.frame.origin == .zero, let v = NSScreen.main?.visibleFrame { panel.setFrameTopLeftPoint(NSPoint(x: v.minX + 20, y: v.maxY - 20)) }
+        m.onFloat = { [weak self] in self?.toggleFloat() }
+
+        registerHotkeys([
+            (kVK_ANSI_S, { [weak self] in self?.m.startStop() }),
+            (kVK_ANSI_P, { [weak self] in self?.m.pauseResume() }),
+            (kVK_ANSI_R, { [weak self] in self?.m.askAgain() }),
+            (kVK_ANSI_M, { [weak self] in self?.toggleFloat() }),
+        ])
+        buildMenu()
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func toggleFloat() {
+        if panel.isVisible { panel.orderOut(nil); window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true) }
+        else { panel.orderFrontRegardless(); window.orderOut(nil) }
+    }
+
+    func buildMenu() {
+        let main = NSMenu()
+        let appItem = NSMenuItem(); main.addItem(appItem)
+        let am = NSMenu(); appItem.submenu = am
+        am.addItem(withTitle: "יציאה מ־ScreenReader", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let sItem = NSMenuItem(); main.addItem(sItem)
+        let sm = NSMenu(title: "סשן"); sItem.submenu = sm
+        for (t, sel, k) in [("התחל / סיים  ⌥⌘S", #selector(mStart), ""), ("השהה / המשך  ⌥⌘P", #selector(mPause), ""),
+                            ("שאל שוב  ⌥⌘R", #selector(mAgain), ""), ("חלון צף  ⌥⌘M", #selector(mFloat), ""), ("סיכום", #selector(mSummary), "")] {
+            let i = NSMenuItem(title: t, action: sel, keyEquivalent: k); i.target = self; sm.addItem(i)
+        }
+        let wItem = NSMenuItem(); main.addItem(wItem)
+        let wm = NSMenu(title: "Window"); wItem.submenu = wm
+        wm.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        wm.addItem(withTitle: "Enter Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f").keyEquivalentModifierMask = [.command, .control]
+        let eItem = NSMenuItem(); main.insertItem(eItem, at: 1)
+        let em = NSMenu(title: "Edit"); eItem.submenu = em
+        em.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        NSApp.mainMenu = main; NSApp.windowsMenu = wm
+    }
+    @objc func mStart() { m.startStop() }
+    @objc func mPause() { m.pauseResume() }
+    @objc func mAgain() { m.askAgain() }
+    @objc func mFloat() { toggleFloat() }
+    @objc func mSummary() { if m.session != nil { window.makeKeyAndOrderFront(nil); m.showSummary = true } }
+
+    func applicationShouldHandleReopen(_ s: NSApplication, hasVisibleWindows: Bool) -> Bool { window.makeKeyAndOrderFront(nil); return true }
+    func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { false }
+    func applicationWillTerminate(_ n: Notification) { m.save() }
 }
 
 // MARK: entry
@@ -563,7 +863,7 @@ if args.count >= 3, args[1] == "--selftest" {
     exit(0)
 }
 let app = NSApplication.shared
-app.setActivationPolicy(.accessory)
+app.setActivationPolicy(.regular)
 let delegate = MainActor.assumeIsolated { App() }
 app.delegate = delegate
 app.run()
