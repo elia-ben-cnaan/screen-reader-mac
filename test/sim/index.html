@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="he" dir="rtl"><head><meta charset="utf-8"><title>Practice Simulator (local test)</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{--blue:#1f4e8c;--bg:#eef2f7;--line:#c9d3e0}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);font:19px Arial,Helvetica,sans-serif;color:#111}
+header{background:var(--blue);color:#fff;display:flex;justify-content:space-between;align-items:center;padding:12px 28px;font-size:17px}
+#timer{font:bold 22px monospace;background:#fff;color:var(--blue);padding:4px 12px;border-radius:4px}
+main{max-width:860px;margin:28px auto;background:#fff;border:1px solid var(--line);border-radius:6px;padding:28px 36px}
+#meta{color:#556;font-size:14px;margin-bottom:10px}
+#stem{line-height:1.6;margin-bottom:18px}
+#stem svg{display:block;margin:14px auto}
+table{border-collapse:collapse;margin:10px auto}td,th{border:1px solid #888;padding:6px 14px;text-align:center}
+#opts{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+#opts label{display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:4px;padding:10px 14px;cursor:pointer;min-height:56px}
+#opts .lbl{font-weight:bold;min-width:22px}
+#opts input{width:18px;height:18px}
+[dir=ltr] #opts label{direction:ltr}
+footer{max-width:860px;margin:0 auto;display:flex;justify-content:flex-start}
+button{background:var(--blue);color:#fff;border:0;border-radius:4px;padding:10px 34px;font-size:18px;cursor:pointer}
+</style></head>
+<body>
+<header><span>סימולטור תרגול · מבדק חשיבה</span><span id="progress"></span><span id="timer">00:00</span></header>
+<main id="card"><div id="meta"></div><div id="stem"></div><div id="opts"></div></main>
+<footer><button id="next">הבא ›</button></footer>
+<script>
+// Local test simulator. answer = index of the correct option (0-3). Never rendered on screen.
+const S = (w, h, body, extra = '') => `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" ${extra} stroke="#111" stroke-width="2.5" fill="none">${body}</svg>`;
+const shape = (k, cx, cy, r, fill = 'none') => ({
+  circle: `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${fill}"/>`,
+  square: `<rect x="${cx - r}" y="${cy - r}" width="${2 * r}" height="${2 * r}" fill="${fill}"/>`,
+  triangle: `<polygon points="${cx},${cy - r} ${cx - r},${cy + r} ${cx + r},${cy + r}" fill="${fill}"/>`,
+  diamond: `<polygon points="${cx},${cy - r} ${cx + r},${cy} ${cx},${cy + r} ${cx - r},${cy}" fill="${fill}"/>`,
+}[k]);
+const poly = (n, cx, cy, r) => `<polygon points="${[...Array(n)].map((_, i) => { const a = -Math.PI / 2 + i * 2 * Math.PI / n; return `${(cx + r * Math.cos(a)).toFixed(1)},${(cy + r * Math.sin(a)).toFixed(1)}`; }).join(' ')}"/>`;
+const hand = (deg, cx = 40, cy = 40) => `<circle cx="${cx}" cy="${cy}" r="30"/><line x1="${cx}" y1="${cy}" x2="${cx}" y2="${cy - 24}" transform="rotate(${deg} ${cx} ${cy})" stroke-width="4"/><circle cx="${cx}" cy="${cy}" r="3" fill="#111"/>`;
+const arrow = deg => S(80, 80, `<g transform="rotate(${deg} 40 40)"><line x1="40" y1="66" x2="40" y2="16" stroke-width="5"/><polygon points="40,8 28,26 52,26" fill="#111"/></g>`);
+const L = (t) => S(80, 80, `<g transform="${t}"><polyline points="25,12 25,62 58,62" stroke-width="7"/><line x1="25" y1="12" x2="40" y2="12" stroke-width="7"/></g>`);
+const sqDot = (pos) => { const p = { tl: [22, 22], tr: [58, 22], br: [58, 58], bl: [22, 58], c: [40, 40] }[pos]; return S(80, 80, `<rect x="12" y="12" width="56" height="56"/><circle cx="${p[0]}" cy="${p[1]}" r="7" fill="#111"/>`); };
+const grid3 = (cells) => { // cells: 9 svg fragments drawn in 90x90 boxes (null = "?")
+  let g = ''; cells.forEach((c, i) => { const x = (i % 3) * 90, y = Math.floor(i / 3) * 90;
+    g += `<rect x="${x + 2}" y="${y + 2}" width="86" height="86" stroke-width="1.5"/>` + (c === null ? `<text x="${x + 45}" y="${y + 58}" font-size="40" text-anchor="middle" fill="#111" stroke="none">?</text>` : `<g transform="translate(${x},${y})">${c}</g>`); });
+  return S(274, 274, g); };
+const fills = ['none', '#999', '#111'];
+
+const Q = [
+ {id:1, type:'VERBAL', sub:'analogy', diff:'easy', lang:'he', stem:'רופא : בית חולים = מורה : ?', opts:['מחברת','בית ספר','תלמיד','גיר'], answer:1},
+ {id:2, type:'VERBAL', sub:'analogy', diff:'medium', lang:'he', stem:'אילם : דיבור = עיוור : ?', opts:['שמיעה','ראייה','חושך','מקל'], answer:1},
+ {id:3, type:'VERBAL', sub:'inference', diff:'medium', lang:'he', stem:'כל הפקידים בסניף דוברים אנגלית. דני אינו דובר אנגלית.<br>מה נובע בהכרח?', opts:['דני אינו פקיד בסניף','דני פקיד בסניף','חלק מהפקידים אינם דוברים אנגלית','לא ניתן לדעת'], answer:0},
+ {id:4, type:'VERBAL', sub:'inference', diff:'hard', lang:'he', stem:'חלק מהמהנדסים הם טייסים. כל הטייסים ממושקפים.<br>איזו טענה נכונה בהכרח?', opts:['כל המהנדסים ממושקפים','חלק מהמהנדסים ממושקפים','כל הממושקפים טייסים','אף מהנדס אינו ממושקף'], answer:1},
+ {id:5, type:'VERBAL', sub:'reading', diff:'medium', lang:'en', stem:'The library opens at 9:00 on weekdays and at 10:00 on Saturdays. It is closed on Sundays. Children under 12 must be accompanied by an adult after 17:00.<br><b>Which statement is true?</b>', opts:['A 10-year-old may enter alone at 18:00 on Monday','The library opens at 9:00 on Saturday','On Sunday the library is closed','Adults cannot enter after 17:00'], answer:2},
+ {id:6, type:'VERBAL', sub:'instructions', diff:'hard', lang:'he', stem:'מצא את האות השלישית במילה "מחשבה". אם היא מופיעה גם במילה "שמש" – בחר במספר 3. אחרת – בחר במספר 2.', opts:['1','2','3','4'], answer:2},
+ {id:7, type:'VERBAL', sub:'double negation', diff:'hard', lang:'he', stem:'"לא נכון שאין אף תלמיד שלא הגיש את העבודה."<br>משמעות המשפט:', opts:['כל התלמידים הגישו','לפחות תלמיד אחד לא הגיש','אף תלמיד לא הגיש','כל התלמידים לא הגישו'], answer:1},
+ {id:8, type:'VERBAL', sub:'negation', diff:'easy', lang:'en', stem:'"It is not true that the store is not open on Friday."<br>What does this mean?', opts:['The store is open on Friday','The store is closed on Friday','The store is open only on Friday','It cannot be determined'], answer:0},
+ {id:9, type:'VERBAL', sub:'at least / at most', diff:'medium', lang:'he', stem:'במבחן השתתפו 8 מועמדים. לפחות 3 ולכל היותר 5 מהם עברו.<br>איזה מצב אפשרי?', opts:['2 נכשלו','6 עברו','4 נכשלו','7 נכשלו'], answer:2},
+ {id:10, type:'VERBAL', sub:'more / less', diff:'easy', lang:'en', stem:'Dana is taller than Yossi. Yossi is taller than Rina.<br>Who is the shortest?', opts:['Dana','Yossi','Rina','Cannot be determined'], answer:2},
+ {id:11, type:'NUMERICAL', sub:'percentages', diff:'easy', lang:'he', stem:'מחיר מוצר הוא 200 ₪. המחיר עלה ב-15%. מה המחיר החדש?', opts:['215 ₪','230 ₪','300 ₪','185 ₪'], answer:1},
+ {id:12, type:'NUMERICAL', sub:'percentages', diff:'hard', lang:'he', stem:'מחיר מוצר עלה ב-20% ולאחר מכן ירד ב-20%.<br>כיצד השתנה המחיר ביחס למחיר המקורי?', opts:['ללא שינוי','ירד ב-4%','ירד ב-2%','עלה ב-4%'], answer:1},
+ {id:13, type:'NUMERICAL', sub:'sequence', diff:'easy', lang:'he', stem:'השלם את הסדרה:&nbsp; 2 ,4 ,8 ,16 ,?', opts:['24','30','32','34'], answer:2},
+ {id:14, type:'NUMERICAL', sub:'sequence', diff:'hard', lang:'he', stem:'השלם את הסדרה:&nbsp; 3 ,5 ,9 ,17 ,33 ,?', opts:['64','65','66','49'], answer:1},
+ {id:15, type:'NUMERICAL', sub:'sequence', diff:'medium', lang:'he', stem:'השלם את הסדרה:&nbsp; 1 ,4 ,9 ,16 ,25 ,?', opts:['30','35','36','49'], answer:2},
+ {id:16, type:'NUMERICAL', sub:'quantitative', diff:'medium', lang:'en', stem:'A train travels 180 km in 2.5 hours. What is its average speed?', opts:['72 km/h','70 km/h','75 km/h','90 km/h'], answer:0},
+ {id:17, type:'NUMERICAL', sub:'word problem', diff:'hard', lang:'he', stem:'צינור א\' ממלא בריכה ב-6 שעות. צינור ב\' ממלא את אותה בריכה ב-3 שעות.<br>בכמה שעות ימלאו את הבריכה יחד?', opts:['2','4.5','3','1.5'], answer:0},
+ {id:18, type:'NUMERICAL', sub:'percentages (mixed he/en)', diff:'medium', lang:'he', stem:'בחנות Apple מחיר iPhone הוא $1,200. בהנחה של 12.5% המחיר יהיה:', opts:['$1,050','$1,080','$1,150','$1,005'], answer:0},
+ {id:19, type:'VISUAL', sub:'rotation', diff:'medium', lang:'he', stem:'איזה חץ ממשיך את הסדרה?' + S(380, 90, `<g transform="translate(0,5)">${arrow(0).replace(/<\/?svg[^>]*>/g,'')}</g><g transform="translate(95,5)">${arrow(90).replace(/<\/?svg[^>]*>/g,'')}</g><g transform="translate(190,5)">${arrow(180).replace(/<\/?svg[^>]*>/g,'')}</g><text x="320" y="62" font-size="44" fill="#111" stroke="none">?</text>`, 'direction="ltr"'), optsSvg:[arrow(0), arrow(270), arrow(90), arrow(180)], answer:1},
+ {id:20, type:'VISUAL', sub:'3x3 matrix', diff:'medium', lang:'he', stem:'איזו צורה משלימה את המטריצה?' + (() => { const rows = [['circle','square','triangle'],['square','triangle','circle'],['triangle','circle','square']];
+   return grid3(rows.flat().map((k, i) => i === 8 ? null : shape(k, 45, 45, 24, fills[i % 3]))); })(),
+   optsSvg:[S(80,80,shape('square',40,40,24,'#999')), S(80,80,shape('circle',40,40,24,'#111')), S(80,80,shape('square',40,40,24,'#111')), S(80,80,shape('square',40,40,24,'none'))], answer:2},
+ {id:21, type:'VISUAL', sub:'missing shape', diff:'hard', lang:'he', stem:'איזו צורה חסרה?' + grid3([0,1,2,1,2,3,2,3,null].map(k => k === null ? null : `<g transform="translate(5,5)">${hand(45 * k)}</g>`)),
+   optsSvg:[S(80,80,hand(135)), S(80,80,hand(225)), S(80,80,hand(0)), S(80,80,hand(180))], answer:3},
+ {id:22, type:'VISUAL', sub:'pattern / odd one out', diff:'hard', lang:'he', stem:'שלוש מהצורות זהות (מסובבות). איזו צורה שונה?', optsSvg:[L('rotate(0 40 40)'), L('rotate(90 40 40)'), L('translate(80,0) scale(-1,1) rotate(180 40 40)'), L('rotate(270 40 40)')], answer:2},
+ {id:23, type:'VISUAL', sub:'shape sequence', diff:'easy', lang:'he', stem:'השלם את הסדרה:' + S(380, 90, ['tl','tr','br'].map((p, i) => `<g transform="translate(${i * 95},5)">${sqDot(p).replace(/<\/?svg[^>]*>/g,'')}</g>`).join('') + `<text x="320" y="62" font-size="44" fill="#111" stroke="none">?</text>`, 'direction="ltr"'), optsSvg:[sqDot('tl'), sqDot('bl'), sqDot('tr'), sqDot('c')], answer:1},
+ {id:24, type:'VISUAL', sub:'shape sequence (sides)', diff:'medium', lang:'he', stem:'איזו צורה ממשיכה את הסדרה?' + S(380, 90, `<g transform="translate(0,5)">${poly(3,40,40,32)}</g><g transform="translate(95,5)">${poly(4,40,40,32)}</g><g transform="translate(190,5)">${poly(5,40,40,32)}</g><text x="320" y="62" font-size="44" fill="#111" stroke="none">?</text>`, 'direction="ltr"'), optsSvg:[S(80,80,poly(7,40,40,30)), S(80,80,poly(5,40,40,30)), S(80,80,poly(6,40,40,30)), S(80,80,poly(8,40,40,30))], answer:2},
+ {id:25, type:'MIXED', sub:'chart', diff:'medium', lang:'he', stem:'הגרף מציג מכירות (ביחידות) בארבעה חודשים.<br>בכמה אחוזים עלו המכירות מינואר לפברואר?' + S(420, 230, (() => { const v = [40, 60, 30, 50], m = ['ינואר','פברואר','מרץ','אפריל']; let s = '';
+   [0,20,40,60].forEach(t => { const y = 190 - t * 2.5; s += `<line x1="50" y1="${y}" x2="400" y2="${y}" stroke="#ccc" stroke-width="1"/><text x="40" y="${y + 5}" font-size="14" text-anchor="end" fill="#111" stroke="none">${t}</text>`; });
+   v.forEach((x, i) => { s += `<rect x="${75 + i * 85}" y="${190 - x * 2.5}" width="50" height="${x * 2.5}" fill="#4a7bc0" stroke="none"/><text x="${100 + i * 85}" y="212" font-size="15" text-anchor="middle" fill="#111" stroke="none">${m[i]}</text>`; });
+   return s + '<line x1="50" y1="190" x2="400" y2="190"/>'; })(), 'direction="ltr"'), opts:['20%','33%','50%','60%'], answer:2},
+ {id:26, type:'MIXED', sub:'table', diff:'medium', lang:'he', stem:'הטבלה מציגה שעות עבודה ושכר לשעה. מי הרוויח הכי הרבה?<table><tr><th>עובד</th><th>שעות</th><th>שכר לשעה</th></tr><tr><td>דנה</td><td>30</td><td>50 ₪</td></tr><tr><td>יוסי</td><td>25</td><td>60 ₪</td></tr><tr><td>רינה</td><td>40</td><td>35 ₪</td></tr><tr><td>אבי</td><td>20</td><td>80 ₪</td></tr></table>', opts:['דנה','יוסי','רינה','אבי'], answer:3},
+ {id:27, type:'MIXED', sub:'diagram', diff:'easy', lang:'he', stem:'במשולש ישר הזווית שבשרטוט, מה אורך היתר?' + S(300, 200, '<polygon points="40,170 40,30 230,170"/><rect x="40" y="155" width="15" height="15" stroke-width="1.5"/><text x="20" y="105" font-size="18" fill="#111" stroke="none">6</text><text x="130" y="192" font-size="18" fill="#111" stroke="none">8</text><text x="150" y="90" font-size="20" fill="#111" stroke="none">?</text>', 'direction="ltr"'), opts:['10','12','14','9'], answer:0},
+];
+
+// Order: ?q=ID shows one question; otherwise shuffled by ?seed=N (default random).
+const P = new URLSearchParams(location.search);
+let seed = +(P.get('seed') || Math.floor(Math.random() * 1e6));
+const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+let order = P.get('q') ? [Q.find(q => q.id === +P.get('q'))] : Q.slice().sort(() => rnd() - 0.5);
+let idx = 0, t0 = Date.now();
+const he = ['א','ב','ג','ד'], en = ['A','B','C','D'];
+
+function render() {
+  const q = order[idx], labels = q.lang === 'he' ? he : en;
+  document.getElementById('card').dir = q.lang === 'he' ? 'rtl' : 'ltr';
+  document.getElementById('progress').textContent = `שאלה ${idx + 1} מתוך ${order.length}`;
+  document.getElementById('meta').textContent = q.lang === 'he' ? 'בחר את התשובה הנכונה' : 'Choose the correct answer';
+  document.getElementById('stem').innerHTML = q.stem;
+  const items = q.optsSvg || q.opts;
+  document.getElementById('opts').innerHTML = items.map((o, i) => `<label><input type="radio" name="a"><span class="lbl">${labels[i]}.</span><span>${o}</span></label>`).join('');
+  // Ground truth for the automated test — readable by the harness, never displayed.
+  window.simState = { id: q.id, type: q.type, sub: q.sub, diff: q.diff, answerIndex: q.answer, answerLabel: labels[q.answer], position: idx + 1 };
+  document.body.dataset.qid = q.id;
+}
+document.getElementById('next').onclick = () => { idx = (idx + 1) % order.length; render(); };
+setInterval(() => { const s = Math.floor((Date.now() - t0) / 1000); document.getElementById('timer').textContent = `${String(s / 60 | 0).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; }, 250);
+window.SIM_QUESTIONS = Q.map(({ id, type, sub, diff, lang, answer }) => ({ id, type, sub, diff, lang, answer, label: (lang === 'he' ? he : en)[answer] }));
+render();
+</script>
+</body></html>

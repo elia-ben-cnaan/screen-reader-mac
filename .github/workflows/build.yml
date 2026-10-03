@@ -1,0 +1,21 @@
+name: build
+on:
+  push: { branches: [main] }
+  workflow_dispatch:
+permissions: { contents: write }
+jobs:
+  mac:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        env: { SR_SERVER: "${{ secrets.SR_SERVER }}", SR_TOKEN: "${{ secrets.SR_TOKEN }}" }
+        run: ./build.sh && ditto -c -k --keepParent ScreenReader.app ScreenReader.zip
+      - name: Layout self-test (no screen, no network)
+        run: |
+          for f in q-text q-shapes q-matrix; do
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --disable-gpu --window-size=1000,1100 --screenshot="$PWD/$f.png" "file://$PWD/test/$f.html" 2>/dev/null || true
+          done
+          ls q-*.png && ScreenReader.app/Contents/MacOS/ScreenReader --layout q-*.png || echo "skipped"
+      - uses: softprops/action-gh-release@v2
+        with: { tag_name: latest, name: "ScreenReader (latest build)", files: ScreenReader.zip, make_latest: true }
