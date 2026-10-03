@@ -1065,6 +1065,1686 @@
 "statement_type": "הקשר נוסף",
 "negation": 0,
 "plain_meaning": "האם לקחת הביתה רכוש של מקום העבודה ללא אישור?"
+},
+{
+"id": "SR-061",
+"family_id": "F-013",
+"topic": "שמירה על רכוש",
+"challenge_tag": "baseline",
+"text": "כאשר מצאתי ציוד שאינו שלי דאגתי להחזיר אותו לבעליו",
+"options": [
+"כלל לא מסכים",
+"לא מסכים",
+"ניטרלי",
+"מסכים",
+"מסכים מאוד"
+],
+"format": "agreement5",
+"statement_type": "היגד ישיר",
+"negation": 0,
+"plain_meaning": "האם אתה מחזיר ציוד שאינו שלך?"
+},
+{
+"id": "SR-062",
+"family_id": "F-013",
+"topic": "שמירה על רכוש",
+"challenge_tag": "frequency",
+"text": "באיזו תדירות נכון לומר שכאשר מצאתי ציוד שאינו שלי דאגתי להחזיר אותו לבעליו?",
+"options": [
+"אף פעם",
+"לעיתים רחוקות",
+"לפעמים",
+"לעיתים קרובות",
+"תמיד"
+],
+"format": "frequency5",
+"statement_type": "תדירות",
+"negation": 0,
+"plain_meaning": "האם אתה מחזיר ציוד שאינו שלך?"
+},
+{
+"id": "SR-063",
+"family_id": "F-013",
+"topic": "שמירה על רכוש",
+"challenge_tag": "question",
+"text": "האם אתה מחזיר ציוד שאינו שלך?",
+"options": [
+"כן",
+"לא"
+],
+"format": "yes_no",
+"statement_type": "שאלה ישירה",
+"negation": 0,
+"plain_meaning": "האם אתה מחזיר ציוד שאינו שלך?"
+},
+{
+"id": "SR-064",
+"family_id": "F-013",
+"topic": "שמירה על רכוש",
+"challenge_tag": "double_negation",
+"text": "לא נכון לומר שמעולם לא היה מצב שבו אתה מחזיר ציוד שאינו שלך",
+"options": [
+"כלל לא מסכים",
+"לא מסכים",
+"ניטרלי",
+"מסכים",
+"מסכים מאוד"
+],
+"format": "agreement5",
+"statement_type": "שלילה כפולה",
+"negation": 2,
+"plain_meaning": "האם אתה מחזיר ציוד שאינו שלך?"
+},
+{
+"id": "SR-065",
+"family_id": "F-013",
+"topic": "שמירה על רכוש",
+"challenge_tag": "contextual",
+"text": "גם במצב לא נוח, כאשר מצאתי ציוד שאינו שלי דאגתי להחזיר אותו לבעליו",
+"options": [
+"נכון לגביי",
+"לא נכון לגביי"
+],
+"format": "true_false",
+"statement_type": "הקשר נוסף",
+"negation": 0,
+"plain_meaning": "האם אתה מחזיר ציוד שאינו שלך?"
+},
+{
+"id": "SR-066",
+"family_id": "F-014",
+"topic": "שמירה על רכוש",
+"challenge_tag": "baseline",
+"text": "השתמשתי במשאב ארגוני לצורך אישי בלי לבדוק אם הדבר מותר",
+"options": [
+"כלל לא מסכים",
+"לא מסכים",
+"ניטרלי",
+"מסכים",
+"מסכים מאוד"
+],
+"format": "agreement5",
+"statement_type": "היגד ישיר",
+"negation": 0,
+"plain_meaning": "האם השתמשת במשאב ארגוני לצורך אישי ללא בדיקת רשות?"
+},
+{
+"id": "SR-067",
+"family_id": "F-014",
+"topic": "שמירה על רכוש",
+"challenge_tag": "frequency",
+"text": "באיזו תדירות נכון לומר שהשתמשתי במשאב ארגוני לצורך אישי בלי לבדוק אם הדבר מותר?",
+"options": [
+"אף פעם",
+"לעיתים רחוקות",
+"לפעמים",
+"לעיתים קרובות",
+"תמיד"
+],
+"format": "frequency5",
+"statement_type": "תדירות",
+"negation": 0,
+"plain_meaning": "האם השתמשת במשאב ארגוני לצורך אישי ללא בדיקת רשות?"
+},
+{
+"id": "SR-068",
+"family_id": "F-014",
+"topic": "שמירה על רכוש",
+"challenge_tag": "question",
+"text": "האם השתמשת במשאב ארגוני לצורך אישי ללא בדיקת רשות?",
+"options": [
+"כן",
+"לא"
+],
+"format": "yes_no",
+"statement_type": "שאלה ישירה",
+"negation": 0,
+"plain_meaning": "האם השתמשת במשאב ארגוני לצורך אישי ללא בדיקת רשות?"
+},
+{
+"id": "SR-069",
+"family_id": "F-014",
+"topic": "שמירה על רכוש",
+"challenge_tag": "double_negation",
+"text": "לא נכון לומר שמעולם לא היה מצב שבו השתמשת במשאב ארגוני לצורך אישי ללא בדיקת רשות",
+"options": [
+"כלל לא מסכים",
+"לא מסכים",
+"ניטרלי",
+"מסכים",
+"מסכים מאוד"
+],
+"format": "agreement5",
+"statement_type": "שלילה כפולה",
+"negation": 2,
+"plain_meaning": "האם השתמשת במשאב ארגוני לצורך אישי ללא בדיקת רשות?"
+},
+{
+"id": "SR-070",
+"family_id": "F-014",
+"topic": "שמירה על רכוש",
+"challenge_tag": "contextual",
+"text": "גם במצב לא נוח, השתמשתי במשאב ארגוני לצורך אישי בלי לבדוק אם הדבר מותר",
+"options": [
+"נכון לגביי",
+"לא נכון לגביי"
+],
+"format": "true_false",
+"statement_type": "הקשר נוסף",
+"negation": 0,
+"plain_meaning": "האם השתמשת במשאב ארגוני לצורך אישי ללא בדיקת רשות?"
+},
+{
+"id": "SR-071",
+"family_id": "F-015",
+"topic": "שמירה על רכוש",
+"challenge_tag": "baseline",
+"text": "אני מבקש רשות גם כשמדובר בשימוש קצר מאוד בציוד שאינו שלי",
+"options": [
+"כלל לא מסכים",
+"לא מסכים",
+"ניטרלי",
+"מסכים",
+"מסכים מאוד"
+],
+"format": "agreement5",
+"statement_type": "היגד ישיר",
+"negation": 0,
+"plain_meaning": "האם אתה מבקש רשות גם לשימוש קצר בציוד שאינו שלך?"
+},
+{
+"id": "SR-072",
+"family_id": "F-015",
+"topic": "שמירה על רכוש",
+"challenge_tag": "frequency",
+"text": "באיזו תדירות נכון לומר שאני מבקש רשות גם כשמדובר בשימוש קצר מאוד בציוד שאינו שלי?",
+"options": [
+"אף פעם",
+"לעיתים רחוקות",
+"לפעמים",
+"לעיתים קרובות",
+"תמיד"
+],
+"format": "frequency5",
+"statement_type": "תדירות",
+"negation": 0,
+"plain_meaning": "האם אתה מבקש רשות גם לשימוש קצר בציוד שאינו שלך?"
+},
+{
+"id": "SR-073",
+"family_id": "F-015",
+"topic": "שמירה על רכוש",
+"challenge_tag": "question",
+"text": "האם אתה מבקש רשות גם לשימוש קצר בציוד שאינו שלך?",
+"options": [
+"כן",
+"לא"
+],
+"format": "yes_no",
+"statement_type": "שאלה ישירה",
+"negation": 0,
+"plain_meaning": "האם אתה מבקש רשות גם לשימוש קצר בציוד שאינו שלך?"
+},
+{
+"id": "SR-074",
+"family_id": "F-015",
+"topic": "שמירה על רכוש",
+"challenge_tag": "double_negation",
+"text": "לא נכון לומר שמעולם לא היה מצב שבו אתה מבקש רשות גם לשימוש קצר בציוד שאינו שלך",
+"options": [
+"כלל לא מסכים",
+"לא מסכים",
+"ניטרלי",
+"מסכים",
+"מסכים מאוד"
+],
+"format": "agreement5",
+"statement_type": "שלילה כפולה",
+"negation": 2,
+"plain_meaning": "האם אתה מבקש רשות גם לשימוש קצר בציוד שאינו שלך?"
+},
+{
+"id": "SR-075",
+"family_id": "F-015",
+"topic": "שמירה על רכוש",
+"challenge_tag": "contextual",
+"text": "גם במצב לא נוח, אני מבקש רשות גם כשמדובר בשימוש קצר מאוד בציוד שאינו שלי",
+"options": [
+"נכון לגביי",
+"לא נכון לגביי"
+],
+"format": "true_false",
+"statement_type": "הקשר נוסף",
+"negation": 0,
+"plain_meaning": "האם אתה מבקש רשות גם לשימוש קצר בציוד שאינו שלך?"
+},
+{
+"id": "SR-076",
+"family_id": "F-016",
+"topic": "דיווח אמת",
+"challenge_tag": "baseline",
+"text": "דיווחתי על טעות שלי גם כשהיה לי לא נעים לעשות זאת",
+"options": [
+"כלל לא מסכים",
+"לא מסכים",
+"ניטרלי",
+"מסכים",
+"מסכים מאוד"
+],
+"format": "agreement5",
+"statement_type": "היגד ישיר",
+"negation": 0,
+"plain_meaning": "האם אתה מדווח על טעויות שלך?"
+},
+{
+"id": "SR-077",
+"family_id": "F-016",
+"topic": "דיווח אמת",
+"challenge_tag": "frequency",
+"text": "באיזו תדירות נכון לומר שדיווחתי על טעות שלי גם כשהיה לי לא נעים לעשות זאת?",
+"options": [
+"אף פעם",
+"לעיתים רחוקות",
+"לפעמים",
+"לעיתים קרובות",
+"תמיד"
+],
+"format": "frequency5",
+"statement_type": "תדירות",
+"negation": 0,
+"plain_meaning": "האם אתה מדווח על טעויות שלך?"
+},
+{
+"id": "SR-078",
+"family_id": "F-016",
+"topic": "דיווח אמת",
+"challenge_tag": "question",
+"text": "האם אתה מדווח על טעויות שלך?",
+"options": [
+"כן",
+"לא"
+],
+"format": "yes_no",
+"statement_type": "שאלה ישירה",
+"negation": 0,
+"plain_meaning": "האם אתה מדווח על טעויות שלך?"
+},
+{
+"id": "SR-079",
+"family_id": "F-016",
+"topic": "דיווח אמת",
+"challenge_tag": "double_negation",
+"text": "לא נכון לומר שמעולם לא היה מצב שבו אתה מדווח על טעויות שלך",
+"options": [
+"כלל לא מסכים",
+"לא מסכים",
+"ניטרלי",
+"מסכים",
+"מסכים מאוד"
+],
+"format": "agreement5",
+"statement_type": "שלילה כפולה",
+"negation": 2,
+"plain_meaning": "האם אתה מדווח על טעויות שלך?"
+},
+{
+"id": "SR-080",
+"family_id": "F-016",
+"topic": "דיווח אמת",
+"challenge_tag": "contextual",
+"text": "גם במצב לא נוח, דיווחתי על טעות שלי גם כשהיה לי לא נעים לעשות זאת",
+"options": [
+"נכון לגביי",
+"לא נכון לגביי"
+],
+"format": "true_false",
+"statement_type": "הקשר נוסף",
+"negation": 0,
+"plain_meaning": "האם אתה מדווח על טעויות שלך?"
+},
+{
+"id": "SR-081",
+"family_id": "F-017",
+"topic": "דיווח אמת",
+"challenge_tag": "baseline",
+"text": "קרה שהשמטתי פרט חשוב כשדיווחתי על אירוע",
+"options": [
+"כלל לא מסכים",
+"לא מסכים",
+"ניטרלי",
+"מסכים",
+"מסכים מאוד"
+],
+"format": "agreement5",
+"statement_type": "היגד ישיר",
+"negation": 0,
+"plain_meaning": "האם השמטת פרט חשוב בדיווח?"
+},
+{
+"id": "SR-082",
+"family_id": "F-017",
+"topic": "דיווח אמת",
+"challenge_tag": "frequency",
+"text": "באיזו תדירות נכון לומר שקרה שהשמטתי פרט חשוב כשדיווחתי על אירוע?",
+"options": [
+"אף פעם",
+"לעיתים רחוקות",
+"לפעמים",
+"לעיתים קרובות",
+"תמיד"
+],
+"format": "frequency5",
+"statement_type": "תדירות",
+"negation": 0,
+"plain_meaning": "האם השמטת פרט חשוב בדיווח?"
+},
+{
+"id": "SR-083",
+"family_id": "F-017",
+"topic": "דיווח אמת",
+"challenge_tag": "question",
+"text": "האם השמטת פרט חשוב בדיווח?",
+"options": [
+"כן",
+"לא"
+],
+"format": "yes_no",
+"statement_type": "שאלה ישירה",
+"negation": 0,
+"plain_meaning": "האם השמטת פרט חשוב בדיווח?"
+},
+{
+"id": "SR-084",
+"family_id": "F-017",
+"topic": "דיווח אמת",
+"challenge_tag": "double_negation",
+"text": "לא נכון לומר שמעולם לא היה מצב שבו השמטת פרט חשוב בדיווח",
+"options": [
+"כלל לא מסכים",
+"לא מסכים",
+"ניטרלי",
+"מסכים",
+"מסכים מאוד"
+],
+"format": "agreement5",
+"statement_type": "שלילה כפולה",
+"negation": 2,
+"plain_meaning": "האם השמטת פרט חשוב בדיווח?"
+},
+{
+"id": "SR-085",
+"family_id": "F-017",
+"topic": "דיווח אמת",
+"challenge_tag": "contextual",
+"text": "גם במצב לא נוח, קרה שהשמטתי פרט חשוב כשדיווחתי על אירוע",
+"options": [
+"נכון לגביי",
+"לא נכון לגביי"
+],
+"format": "true_false",
+"statement_type": "הקשר נוסף",
+"negation": 0,
+"plain_meaning": "האם השמטת פרט חשוב בדיווח?"
+},
+{
+"id": "SR-086",
+"family_id": "F-018",
+"topic": "דיווח אמת",
+"challenge_tag": "baseline",
+"text": "אני מקפיד שהמידע שאני מוסר יהיה מדויק גם בפרטים קטנים",
+"options": [
+"כלל לא מסכים",
+"לא מסכים",
+"ניטרלי",
+"מסכים",
+"מסכים מאוד"
+],
+"format": "agreement5",
+"statement_type": "היגד ישיר",
+"negation": 0,
+"plain_meaning": "האם אתה מקפיד למסור מידע מדויק?"
+},
+{
+"id": "SR-087",
+"family_id": "F-018",
+"topic": "דיווח אמת",
+"challenge_tag": "frequency",
+"text": "באיזו תדירות נכון לומר שאני מקפיד שהמידע שאני מוסר יהיה מדויק גם בפרטים קטנים?",
+"options": [
+"אף פעם",
+"לעיתים רחוקות",
+"לפעמים",
+"לעיתים קרובות",
+"תמיד"
+],
+"format": "frequency5",
+"statement_type": "תדירות",
+"negation": 0,
+"plain_meaning": "האם אתה מקפיד למסור מידע מדויק?"
+},
+{
+"id": "SR-088",
+"family_id": "F-018",
+"topic": "דיווח אמת",
+"challenge_tag": "question",
+"text": "האם אתה מקפיד למסור מידע מדויק?",
+"options": [
+"כן",
+"לא"
+],
+"format": "yes_no",
+"statement_type": "שאלה ישירה",
+"negation": 0,
+"plain_meaning": "האם אתה מקפיד למסור מידע מדויק?"
+},
+{
+"id": "SR-089",
+"family_id": "F-018",
+"topic": "דיווח אמת",
+"challenge_tag": "double_negation",
+"text": "לא נכון לומר שמעולם לא היה מצב שבו אתה מקפיד למסור מידע מדויק",
+"options": [
+"כלל לא מסכים",
+"לא מסכים",
+"ניטרלי",
+"מסכים",
+"מסכים מאוד"
+],
+"format": "agreement5",
+"statement_type": "שלילה כפולה",
+"negation": 2,
+"plain_meaning": "האם אתה מקפיד למסור מידע מדויק?"
+},
+{
+"id": "SR-090",
+"family_id": "F-018",
+"topic": "דיווח אמת",
+"challenge_tag": "contextual",
+"text": "גם במצב לא נוח, אני מקפיד שהמידע שאני מוסר יהיה מדויק גם בפרטים קטנים",
+"options": [
+"נכון לגביי",
+"לא נכון לגביי"
+],
+"format": "true_false",
+"statement_type": "הקשר נוסף",
+"negation": 0,
+"plain_meaning": "האם אתה מקפיד למסור מידע מדויק?"
+},
+{
+"id": "SR-091",
+"family_id": "F-019",
+"topic": "דיווח אמת",
+"challenge_tag": "baseline",
+"text": "אם איני בטוח בפרט מסוים אני מציין זאת במקום להציג אותו כעובדה",
+"options": [
+"כלל לא מסכים",
+"לא מסכים",
+"ניטרלי",
+"מסכים",
+"מסכים מאוד"
+],
+"format": "agreement5",
+"statement_type": "היגד ישיר",
+"negation": 0,
+"plain_meaning": "האם אתה מציין חוסר ודאות במקום להציג מידע כעובדה?"
+},
+{
+"id": "SR-092",
+"family_id": "F-019",
+"topic": "דיווח אמת",
+"challenge_tag": "frequency",
+"text": "באיזו תדירות נכון לומר שאם איני בטוח בפרט מסוים אני מציין זאת במקום להציג אותו כעובדה?",
+"options": [
+"אף פעם",
+"לעיתים רחוקות",
+"לפעמים",
+"לעיתים קרובות",
+"תמיד"
+],
+"format": "frequency5",
+"statement_type": "תדירות",
+"negation": 0,
+"plain_meaning": "האם אתה מציין חוסר ודאות במקום להציג מידע כעובדה?"
+},
+{
+"id": "SR-093",
+"family_id": "F-019",
+"topic": "דיווח אמת",
+"challenge_tag": "question",
+"text": "האם אתה מציין חוסר ודאות במקום להציג מידע כעובדה?",
+"options": [
+"כן",
+"לא"
+],
+"format": "yes_no",
+"statement_type": "שאלה ישירה",
+"negation": 0,
+"plain_meaning": "האם אתה מציין חוסר ודאות במקום להציג מידע כעובדה?"
+},
+{
+"id": "SR-094",
+"family_id": "F-019",
+"topic": "דיווח אמת",
+"challenge_tag": "double_negation",
+"text": "לא נכון לומר שמעולם לא היה מצב שבו אתה מציין חוסר ודאות במקום להציג מידע כעובדה",
+"options": [
+"כלל לא מסכים",
+"לא מסכים",
+"ניטרלי",
+"מסכים",
+"מסכים מאוד"
+],
+"format": "agreement5",
+"statement_type": "שלילה כפולה",
+"negation": 2,
+"plain_meaning": "האם אתה מציין חוסר ודאות במקום להציג מידע כעובדה?"
+},
+{
+"id": "SR-095",
+"family_id": "F-019",
+"topic": "דיווח אמת",
+"challenge_tag": "contextual",
+"text": "גם במצב לא נוח, אם איני בטוח בפרט מסוים אני מציין זאת במקום להציג אותו כעובדה",
+"options": [
+"נכון לגביי",
+"לא נכון לגביי"
+],
+"format": "true_false",
+"statement_type": "הקשר נוסף",
+"negation": 0,
+"plain_meaning": "האם אתה מציין חוסר ודאות במקום להציג מידע כעובדה?"
+},
+{
+"id": "SR-096",
+"family_id": "F-020",
+"topic": "דיווח אמת",
+"challenge_tag": "baseline",
+"text": "נתתי תשובה בטוחה גם כשלא באמת ידעתי את התשובה",
+"options": [
+"כלל לא מסכים",
+"לא מסכים",
+"ניטרלי",
+"מסכים",
+"מסכים מאוד"
+],
+"format": "agreement5",
+"statement_type": "היגד ישיר",
+"negation": 0,
+"plain_meaning": "האם הצגת ודאות כשלא באמת ידעת?"
+},
+{
+"id": "SR-097",
+"family_id": "F-020",
+"topic": "דיווח אמת",
+"challenge_tag": "frequency",
+"text": "באיזו תדירות נכון לומר שנתתי תשובה בטוחה גם כשלא באמת ידעתי את התשובה?",
+"options": [
+"אף פעם",
+"לעיתים רחוקות",
+"לפעמים",
+"לעיתים קרובות",
+"תמיד"
+],
+"format": "frequency5",
+"statement_type": "תדירות",
+"negation": 0,
+"plain_meaning": "האם הצגת ודאות כשלא באמת ידעת?"
+},
+{
+"id": "SR-098",
+"family_id": "F-020",
+"topic": "דיווח אמת",
+"challenge_tag": "question",
+"text": "האם הצגת ודאות כשלא באמת ידעת?",
+"options": [
+"כן",
+"לא"
+],
+"format": "yes_no",
+"statement_type": "שאלה ישירה",
+"negation": 0,
+"plain_meaning": "האם הצגת ודאות כשלא באמת ידעת?"
+},
+{
+"id": "SR-099",
+"family_id": "F-020",
+"topic": "דיווח אמת",
+"challenge_tag": "double_negation",
+"text": "לא נכון לומר שמעולם לא היה מצב שבו הצגת ודאות כשלא באמת ידעת",
+"options": [
+"כלל לא מסכים",
+"לא מסכים",
+"ניטרלי",
+"מסכים",
+"מסכים מאוד"
+],
+"format": "agreement5",
+"statement_type": "שלילה כפולה",
+"negation": 2,
+"plain_meaning": "האם הצגת ודאות כשלא באמת ידעת?"
+},
+{
+"id": "SR-100",
+"family_id": "F-020",
+"topic": "דיווח אמת",
+"challenge_tag": "contextual",
+"text": "גם במצב לא נוח, נתתי תשובה בטוחה גם כשלא באמת ידעתי את התשובה",
+"options": [
+"נכון לגביי",
+"לא נכון לגביי"
+],
+"format": "true_false",
+"statement_type": "הקשר נוסף",
+"negation": 0,
+"plain_meaning": "האם הצגת ודאות כשלא באמת ידעת?"
+},
+{
+"id": "SR-101",
+"family_id": "F-021",
+"topic": "ציות לכללים",
+"challenge_tag": "baseline",
+"text": "פעלתי בניגוד לנוהל כי חשבתי שבמקרה המסוים הוא מיותר",
+"options": [
+"כלל לא מסכים",
+"לא מסכים",
+"ניטרלי",
+"מסכים",
+"מסכים מאוד"
+],
+"format": "agreement5",
+"statement_type": "היגד ישיר",
+"negation": 0,
+"plain_meaning": "האם פעלת בניגוד לנוהל משום שחשבת שאינו נחוץ?"
+},
+{
+"id": "SR-102",
+"family_id": "F-021",
+"topic": "ציות לכללים",
+"challenge_tag": "frequency",
+"text": "באיזו תדירות נכון לומר שפעלתי בניגוד לנוהל כי חשבתי שבמקרה המסוים הוא מיותר?",
+"options": [
+"אף פעם",
+"לעיתים רחוקות",
+"לפעמים",
+"לעיתים קרובות",
+"תמיד"
+],
+"format": "frequency5",
+"statement_type": "תדירות",
+"negation": 0,
+"plain_meaning": "האם פעלת בניגוד לנוהל משום שחשבת שאינו נחוץ?"
+},
+{
+"id": "SR-103",
+"family_id": "F-021",
+"topic": "ציות לכללים",
+"challenge_tag": "question",
+"text": "האם פעלת בניגוד לנוהל משום שחשבת שאינו נחוץ?",
+"options": [
+"כן",
+"לא"
+],
+"format": "yes_no",
+"statement_type": "שאלה ישירה",
+"negation": 0,
+"plain_meaning": "האם פעלת בניגוד לנוהל משום שחשבת שאינו נחוץ?"
+},
+{
+"id": "SR-104",
+"family_id": "F-021",
+"topic": "ציות לכללים",
+"challenge_tag": "double_negation",
+"text": "לא נכון לומר שמעולם לא היה מצב שבו פעלת בניגוד לנוהל משום שחשבת שאינו נחוץ",
+"options": [
+"כלל לא מסכים",
+"לא מסכים",
+"ניטרלי",
+"מסכים",
+"מסכים מאוד"
+],
+"format": "agreement5",
+"statement_type": "שלילה כפולה",
+"negation": 2,
+"plain_meaning": "האם פעלת בניגוד לנוהל משום שחשבת שאינו נחוץ?"
+},
+{
+"id": "SR-105",
+"family_id": "F-021",
+"topic": "ציות לכללים",
+"challenge_tag": "contextual",
+"text": "גם במצב לא נוח, פעלתי בניגוד לנוהל כי חשבתי שבמקרה המסוים הוא מיותר",
+"options": [
+"נכון לגביי",
+"לא נכון לגביי"
+],
+"format": "true_false",
+"statement_type": "הקשר נוסף",
+"negation": 0,
+"plain_meaning": "האם פעלת בניגוד לנוהל משום שחשבת שאינו נחוץ?"
+},
+{
+"id": "SR-106",
+"family_id": "F-022",
+"topic": "ציות לכללים",
+"challenge_tag": "baseline",
+"text": "כשכלל לא היה ברור לי ביררתי לפני שפעלתי",
+"options": [
+"כלל לא מסכים",
+"לא מסכים",
+"ניטרלי",
+"מסכים",
+"מסכים מאוד"
+],
+"format": "agreement5",
+"statement_type": "היגד ישיר",
+"negation": 0,
+"plain_meaning": "האם אתה מברר כלל לא ברור לפני פעולה?"
+},
+{
+"id": "SR-107",
+"family_id": "F-022",
+"topic": "ציות לכללים",
+"challenge_tag": "frequency",
+"text": "באיזו תדירות נכון לומר שכשכלל לא היה ברור לי ביררתי לפני שפעלתי?",
+"options": [
+"אף פעם",
+"לעיתים רחוקות",
+"לפעמים",
+"לעיתים קרובות",
+"תמיד"
+],
+"format": "frequency5",
+"statement_type": "תדירות",
+"negation": 0,
+"plain_meaning": "האם אתה מברר כלל לא ברור לפני פעולה?"
+},
+{
+"id": "SR-108",
+"family_id": "F-022",
+"topic": "ציות לכללים",
+"challenge_tag": "question",
+"text": "האם אתה מברר כלל לא ברור לפני פעולה?",
+"options": [
+"כן",
+"לא"
+],
+"format": "yes_no",
+"statement_type": "שאלה ישירה",
+"negation": 0,
+"plain_meaning": "האם אתה מברר כלל לא ברור לפני פעולה?"
+},
+{
+"id": "SR-109",
+"family_id": "F-022",
+"topic": "ציות לכללים",
+"challenge_tag": "double_negation",
+"text": "לא נכון לומר שמעולם לא היה מצב שבו אתה מברר כלל לא ברור לפני פעולה",
+"options": [
+"כלל לא מסכים",
+"לא מסכים",
+"ניטרלי",
+"מסכים",
+"מסכים מאוד"
+],
+"format": "agreement5",
+"statement_type": "שלילה כפולה",
+"negation": 2,
+"plain_meaning": "האם אתה מברר כלל לא ברור לפני פעולה?"
+},
+{
+"id": "SR-110",
+"family_id": "F-022",
+"topic": "ציות לכללים",
+"challenge_tag": "contextual",
+"text": "גם במצב לא נוח, כשכלל לא היה ברור לי ביררתי לפני שפעלתי",
+"options": [
+"נכון לגביי",
+"לא נכון לגביי"
+],
+"format": "true_false",
+"statement_type": "הקשר נוסף",
+"negation": 0,
+"plain_meaning": "האם אתה מברר כלל לא ברור לפני פעולה?"
+},
+{
+"id": "SR-111",
+"family_id": "F-023",
+"topic": "ציות לכללים",
+"challenge_tag": "baseline",
+"text": "עקפתי שלב בתהליך כדי לחסוך זמן",
+"options": [
+"כלל לא מסכים",
+"לא מסכים",
+"ניטרלי",
+"מסכים",
+"מסכים מאוד"
+],
+"format": "agreement5",
+"statement_type": "היגד ישיר",
+"negation": 0,
+"plain_meaning": "האם עקפת שלב בתהליך כדי לחסוך זמן?"
+},
+{
+"id": "SR-112",
+"family_id": "F-023",
+"topic": "ציות לכללים",
+"challenge_tag": "frequency",
+"text": "באיזו תדירות נכון לומר שעקפתי שלב בתהליך כדי לחסוך זמן?",
+"options": [
+"אף פעם",
+"לעיתים רחוקות",
+"לפעמים",
+"לעיתים קרובות",
+"תמיד"
+],
+"format": "frequency5",
+"statement_type": "תדירות",
+"negation": 0,
+"plain_meaning": "האם עקפת שלב בתהליך כדי לחסוך זמן?"
+},
+{
+"id": "SR-113",
+"family_id": "F-023",
+"topic": "ציות לכללים",
+"challenge_tag": "question",
+"text": "האם עקפת שלב בתהליך כדי לחסוך זמן?",
+"options": [
+"כן",
+"לא"
+],
+"format": "yes_no",
+"statement_type": "שאלה ישירה",
+"negation": 0,
+"plain_meaning": "האם עקפת שלב בתהליך כדי לחסוך זמן?"
+},
+{
+"id": "SR-114",
+"family_id": "F-023",
+"topic": "ציות לכללים",
+"challenge_tag": "double_negation",
+"text": "לא נכון לומר שמעולם לא היה מצב שבו עקפת שלב בתהליך כדי לחסוך זמן",
+"options": [
+"כלל לא מסכים",
+"לא מסכים",
+"ניטרלי",
+"מסכים",
+"מסכים מאוד"
+],
+"format": "agreement5",
+"statement_type": "שלילה כפולה",
+"negation": 2,
+"plain_meaning": "האם עקפת שלב בתהליך כדי לחסוך זמן?"
+},
+{
+"id": "SR-115",
+"family_id": "F-023",
+"topic": "ציות לכללים",
+"challenge_tag": "contextual",
+"text": "גם במצב לא נוח, עקפתי שלב בתהליך כדי לחסוך זמן",
+"options": [
+"נכון לגביי",
+"לא נכון לגביי"
+],
+"format": "true_false",
+"statement_type": "הקשר נוסף",
+"negation": 0,
+"plain_meaning": "האם עקפת שלב בתהליך כדי לחסוך זמן?"
+},
+{
+"id": "SR-116",
+"family_id": "F-024",
+"topic": "ציות לכללים",
+"challenge_tag": "baseline",
+"text": "גם כשאני ממהר אני משתדל לא לדלג על שלבים שנועדו לבטיחות",
+"options": [
+"כלל לא מסכים",
+"לא מסכים",
+"ניטרלי",
+"מסכים",
+"מסכים מאוד"
+],
+"format": "agreement5",
+"statement_type": "היגד ישיר",
+"negation": 0,
+"plain_meaning": "האם אתה מקפיד על שלבי בטיחות גם כשאתה ממהר?"
+},
+{
+"id": "SR-117",
+"family_id": "F-024",
+"topic": "ציות לכללים",
+"challenge_tag": "frequency",
+"text": "באיזו תדירות נכון לומר שגם כשאני ממהר אני משתדל לא לדלג על שלבים שנועדו לבטיחות?",
+"options": [
+"אף פעם",
+"לעיתים רחוקות",
+"לפעמים",
+"לעיתים קרובות",
+"תמיד"
+],
+"format": "frequency5",
+"statement_type": "תדירות",
+"negation": 0,
+"plain_meaning": "האם אתה מקפיד על שלבי בטיחות גם כשאתה ממהר?"
+},
+{
+"id": "SR-118",
+"family_id": "F-024",
+"topic": "ציות לכללים",
+"challenge_tag": "question",
+"text": "האם אתה מקפיד על שלבי בטיחות גם כשאתה ממהר?",
+"options": [
+"כן",
+"לא"
+],
+"format": "yes_no",
+"statement_type": "שאלה ישירה",
+"negation": 0,
+"plain_meaning": "האם אתה מקפיד על שלבי בטיחות גם כשאתה ממהר?"
+},
+{
+"id": "SR-119",
+"family_id": "F-024",
+"topic": "ציות לכללים",
+"challenge_tag": "double_negation",
+"text": "לא נכון לומר שמעולם לא היה מצב שבו אתה מקפיד על שלבי בטיחות גם כשאתה ממהר",
+"options": [
+"כלל לא מסכים",
+"לא מסכים",
+"ניטרלי",
+"מסכים",
+"מסכים מאוד"
+],
+"format": "agreement5",
+"statement_type": "שלילה כפולה",
+"negation": 2,
+"plain_meaning": "האם אתה מקפיד על שלבי בטיחות גם כשאתה ממהר?"
+},
+{
+"id": "SR-120",
+"family_id": "F-024",
+"topic": "ציות לכללים",
+"challenge_tag": "contextual",
+"text": "גם במצב לא נוח, גם כשאני ממהר אני משתדל לא לדלג על שלבים שנועדו לבטיחות",
+"options": [
+"נכון לגביי",
+"לא נכון לגביי"
+],
+"format": "true_false",
+"statement_type": "הקשר נוסף",
+"negation": 0,
+"plain_meaning": "האם אתה מקפיד על שלבי בטיחות גם כשאתה ממהר?"
+},
+{
+"id": "SR-121",
+"family_id": "F-025",
+"topic": "ציות לכללים",
+"challenge_tag": "baseline",
+"text": "שיניתי נתון קטן בטופס כי חשבתי שהוא לא באמת חשוב",
+"options": [
+"כלל לא מסכים",
+"לא מסכים",
+"ניטרלי",
+"מסכים",
+"מסכים מאוד"
+],
+"format": "agreement5",
+"statement_type": "היגד ישיר",
+"negation": 0,
+"plain_meaning": "האם שינית נתון בטופס משום שחשבת שאינו חשוב?"
+},
+{
+"id": "SR-122",
+"family_id": "F-025",
+"topic": "ציות לכללים",
+"challenge_tag": "frequency",
+"text": "באיזו תדירות נכון לומר ששיניתי נתון קטן בטופס כי חשבתי שהוא לא באמת חשוב?",
+"options": [
+"אף פעם",
+"לעיתים רחוקות",
+"לפעמים",
+"לעיתים קרובות",
+"תמיד"
+],
+"format": "frequency5",
+"statement_type": "תדירות",
+"negation": 0,
+"plain_meaning": "האם שינית נתון בטופס משום שחשבת שאינו חשוב?"
+},
+{
+"id": "SR-123",
+"family_id": "F-025",
+"topic": "ציות לכללים",
+"challenge_tag": "question",
+"text": "האם שינית נתון בטופס משום שחשבת שאינו חשוב?",
+"options": [
+"כן",
+"לא"
+],
+"format": "yes_no",
+"statement_type": "שאלה ישירה",
+"negation": 0,
+"plain_meaning": "האם שינית נתון בטופס משום שחשבת שאינו חשוב?"
+},
+{
+"id": "SR-124",
+"family_id": "F-025",
+"topic": "ציות לכללים",
+"challenge_tag": "double_negation",
+"text": "לא נכון לומר שמעולם לא היה מצב שבו שינית נתון בטופס משום שחשבת שאינו חשוב",
+"options": [
+"כלל לא מסכים",
+"לא מסכים",
+"ניטרלי",
+"מסכים",
+"מסכים מאוד"
+],
+"format": "agreement5",
+"statement_type": "שלילה כפולה",
+"negation": 2,
+"plain_meaning": "האם שינית נתון בטופס משום שחשבת שאינו חשוב?"
+},
+{
+"id": "SR-125",
+"family_id": "F-025",
+"topic": "ציות לכללים",
+"challenge_tag": "contextual",
+"text": "גם במצב לא נוח, שיניתי נתון קטן בטופס כי חשבתי שהוא לא באמת חשוב",
+"options": [
+"נכון לגביי",
+"לא נכון לגביי"
+],
+"format": "true_false",
+"statement_type": "הקשר נוסף",
+"negation": 0,
+"plain_meaning": "האם שינית נתון בטופס משום שחשבת שאינו חשוב?"
+},
+{
+"id": "SR-126",
+"family_id": "F-026",
+"topic": "אחריות",
+"challenge_tag": "baseline",
+"text": "כאשר גרמתי לבעיה לקחתי אחריות על החלק שלי",
+"options": [
+"כלל לא מסכים",
+"לא מסכים",
+"ניטרלי",
+"מסכים",
+"מסכים מאוד"
+],
+"format": "agreement5",
+"statement_type": "היגד ישיר",
+"negation": 0,
+"plain_meaning": "האם אתה לוקח אחריות על בעיות שגרמת להן?"
+},
+{
+"id": "SR-127",
+"family_id": "F-026",
+"topic": "אחריות",
+"challenge_tag": "frequency",
+"text": "באיזו תדירות נכון לומר שכאשר גרמתי לבעיה לקחתי אחריות על החלק שלי?",
+"options": [
+"אף פעם",
+"לעיתים רחוקות",
+"לפעמים",
+"לעיתים קרובות",
+"תמיד"
+],
+"format": "frequency5",
+"statement_type": "תדירות",
+"negation": 0,
+"plain_meaning": "האם אתה לוקח אחריות על בעיות שגרמת להן?"
+},
+{
+"id": "SR-128",
+"family_id": "F-026",
+"topic": "אחריות",
+"challenge_tag": "question",
+"text": "האם אתה לוקח אחריות על בעיות שגרמת להן?",
+"options": [
+"כן",
+"לא"
+],
+"format": "yes_no",
+"statement_type": "שאלה ישירה",
+"negation": 0,
+"plain_meaning": "האם אתה לוקח אחריות על בעיות שגרמת להן?"
+},
+{
+"id": "SR-129",
+"family_id": "F-026",
+"topic": "אחריות",
+"challenge_tag": "double_negation",
+"text": "לא נכון לומר שמעולם לא היה מצב שבו אתה לוקח אחריות על בעיות שגרמת להן",
+"options": [
+"כלל לא מסכים",
+"לא מסכים",
+"ניטרלי",
+"מסכים",
+"מסכים מאוד"
+],
+"format": "agreement5",
+"statement_type": "שלילה כפולה",
+"negation": 2,
+"plain_meaning": "האם אתה לוקח אחריות על בעיות שגרמת להן?"
+},
+{
+"id": "SR-130",
+"family_id": "F-026",
+"topic": "אחריות",
+"challenge_tag": "contextual",
+"text": "גם במצב לא נוח, כאשר גרמתי לבעיה לקחתי אחריות על החלק שלי",
+"options": [
+"נכון לגביי",
+"לא נכון לגביי"
+],
+"format": "true_false",
+"statement_type": "הקשר נוסף",
+"negation": 0,
+"plain_meaning": "האם אתה לוקח אחריות על בעיות שגרמת להן?"
+},
+{
+"id": "SR-131",
+"family_id": "F-027",
+"topic": "אחריות",
+"challenge_tag": "baseline",
+"text": "ניסיתי להעביר לאחרים אחריות לטעות שהייתי מעורב בה",
+"options": [
+"כלל לא מסכים",
+"לא מסכים",
+"ניטרלי",
+"מסכים",
+"מסכים מאוד"
+],
+"format": "agreement5",
+"statement_type": "היגד ישיר",
+"negation": 0,
+"plain_meaning": "האם ניסית להעביר לאחר אחריות לטעות שלך?"
+},
+{
+"id": "SR-132",
+"family_id": "F-027",
+"topic": "אחריות",
+"challenge_tag": "frequency",
+"text": "באיזו תדירות נכון לומר שניסיתי להעביר לאחרים אחריות לטעות שהייתי מעורב בה?",
+"options": [
+"אף פעם",
+"לעיתים רחוקות",
+"לפעמים",
+"לעיתים קרובות",
+"תמיד"
+],
+"format": "frequency5",
+"statement_type": "תדירות",
+"negation": 0,
+"plain_meaning": "האם ניסית להעביר לאחר אחריות לטעות שלך?"
+},
+{
+"id": "SR-133",
+"family_id": "F-027",
+"topic": "אחריות",
+"challenge_tag": "question",
+"text": "האם ניסית להעביר לאחר אחריות לטעות שלך?",
+"options": [
+"כן",
+"לא"
+],
+"format": "yes_no",
+"statement_type": "שאלה ישירה",
+"negation": 0,
+"plain_meaning": "האם ניסית להעביר לאחר אחריות לטעות שלך?"
+},
+{
+"id": "SR-134",
+"family_id": "F-027",
+"topic": "אחריות",
+"challenge_tag": "double_negation",
+"text": "לא נכון לומר שמעולם לא היה מצב שבו ניסית להעביר לאחר אחריות לטעות שלך",
+"options": [
+"כלל לא מסכים",
+"לא מסכים",
+"ניטרלי",
+"מסכים",
+"מסכים מאוד"
+],
+"format": "agreement5",
+"statement_type": "שלילה כפולה",
+"negation": 2,
+"plain_meaning": "האם ניסית להעביר לאחר אחריות לטעות שלך?"
+},
+{
+"id": "SR-135",
+"family_id": "F-027",
+"topic": "אחריות",
+"challenge_tag": "contextual",
+"text": "גם במצב לא נוח, ניסיתי להעביר לאחרים אחריות לטעות שהייתי מעורב בה",
+"options": [
+"נכון לגביי",
+"לא נכון לגביי"
+],
+"format": "true_false",
+"statement_type": "הקשר נוסף",
+"negation": 0,
+"plain_meaning": "האם ניסית להעביר לאחר אחריות לטעות שלך?"
+},
+{
+"id": "SR-136",
+"family_id": "F-028",
+"topic": "אחריות",
+"challenge_tag": "baseline",
+"text": "כשקיבלתי משוב ביקורתי ניסיתי להבין מה עליי לשנות",
+"options": [
+"כלל לא מסכים",
+"לא מסכים",
+"ניטרלי",
+"מסכים",
+"מסכים מאוד"
+],
+"format": "agreement5",
+"statement_type": "היגד ישיר",
+"negation": 0,
+"plain_meaning": "האם אתה מנסה ללמוד ממשוב ביקורתי?"
+},
+{
+"id": "SR-137",
+"family_id": "F-028",
+"topic": "אחריות",
+"challenge_tag": "frequency",
+"text": "באיזו תדירות נכון לומר שכשקיבלתי משוב ביקורתי ניסיתי להבין מה עליי לשנות?",
+"options": [
+"אף פעם",
+"לעיתים רחוקות",
+"לפעמים",
+"לעיתים קרובות",
+"תמיד"
+],
+"format": "frequency5",
+"statement_type": "תדירות",
+"negation": 0,
+"plain_meaning": "האם אתה מנסה ללמוד ממשוב ביקורתי?"
+},
+{
+"id": "SR-138",
+"family_id": "F-028",
+"topic": "אחריות",
+"challenge_tag": "question",
+"text": "האם אתה מנסה ללמוד ממשוב ביקורתי?",
+"options": [
+"כן",
+"לא"
+],
+"format": "yes_no",
+"statement_type": "שאלה ישירה",
+"negation": 0,
+"plain_meaning": "האם אתה מנסה ללמוד ממשוב ביקורתי?"
+},
+{
+"id": "SR-139",
+"family_id": "F-028",
+"topic": "אחריות",
+"challenge_tag": "double_negation",
+"text": "לא נכון לומר שמעולם לא היה מצב שבו אתה מנסה ללמוד ממשוב ביקורתי",
+"options": [
+"כלל לא מסכים",
+"לא מסכים",
+"ניטרלי",
+"מסכים",
+"מסכים מאוד"
+],
+"format": "agreement5",
+"statement_type": "שלילה כפולה",
+"negation": 2,
+"plain_meaning": "האם אתה מנסה ללמוד ממשוב ביקורתי?"
+},
+{
+"id": "SR-140",
+"family_id": "F-028",
+"topic": "אחריות",
+"challenge_tag": "contextual",
+"text": "גם במצב לא נוח, כשקיבלתי משוב ביקורתי ניסיתי להבין מה עליי לשנות",
+"options": [
+"נכון לגביי",
+"לא נכון לגביי"
+],
+"format": "true_false",
+"statement_type": "הקשר נוסף",
+"negation": 0,
+"plain_meaning": "האם אתה מנסה ללמוד ממשוב ביקורתי?"
+},
+{
+"id": "SR-141",
+"family_id": "F-029",
+"topic": "אחריות",
+"challenge_tag": "baseline",
+"text": "אני מבקש עזרה כשאני מבין שמשימה גדולה ממה שאוכל להשלים לבד",
+"options": [
+"כלל לא מסכים",
+"לא מסכים",
+"ניטרלי",
+"מסכים",
+"מסכים מאוד"
+],
+"format": "agreement5",
+"statement_type": "היגד ישיר",
+"negation": 0,
+"plain_meaning": "האם אתה מבקש עזרה כשאינך יכול להשלים משימה לבד?"
+},
+{
+"id": "SR-142",
+"family_id": "F-029",
+"topic": "אחריות",
+"challenge_tag": "frequency",
+"text": "באיזו תדירות נכון לומר שאני מבקש עזרה כשאני מבין שמשימה גדולה ממה שאוכל להשלים לבד?",
+"options": [
+"אף פעם",
+"לעיתים רחוקות",
+"לפעמים",
+"לעיתים קרובות",
+"תמיד"
+],
+"format": "frequency5",
+"statement_type": "תדירות",
+"negation": 0,
+"plain_meaning": "האם אתה מבקש עזרה כשאינך יכול להשלים משימה לבד?"
+},
+{
+"id": "SR-143",
+"family_id": "F-029",
+"topic": "אחריות",
+"challenge_tag": "question",
+"text": "האם אתה מבקש עזרה כשאינך יכול להשלים משימה לבד?",
+"options": [
+"כן",
+"לא"
+],
+"format": "yes_no",
+"statement_type": "שאלה ישירה",
+"negation": 0,
+"plain_meaning": "האם אתה מבקש עזרה כשאינך יכול להשלים משימה לבד?"
+},
+{
+"id": "SR-144",
+"family_id": "F-029",
+"topic": "אחריות",
+"challenge_tag": "double_negation",
+"text": "לא נכון לומר שמעולם לא היה מצב שבו אתה מבקש עזרה כשאינך יכול להשלים משימה לבד",
+"options": [
+"כלל לא מסכים",
+"לא מסכים",
+"ניטרלי",
+"מסכים",
+"מסכים מאוד"
+],
+"format": "agreement5",
+"statement_type": "שלילה כפולה",
+"negation": 2,
+"plain_meaning": "האם אתה מבקש עזרה כשאינך יכול להשלים משימה לבד?"
+},
+{
+"id": "SR-145",
+"family_id": "F-029",
+"topic": "אחריות",
+"challenge_tag": "contextual",
+"text": "גם במצב לא נוח, אני מבקש עזרה כשאני מבין שמשימה גדולה ממה שאוכל להשלים לבד",
+"options": [
+"נכון לגביי",
+"לא נכון לגביי"
+],
+"format": "true_false",
+"statement_type": "הקשר נוסף",
+"negation": 0,
+"plain_meaning": "האם אתה מבקש עזרה כשאינך יכול להשלים משימה לבד?"
+},
+{
+"id": "SR-146",
+"family_id": "F-030",
+"topic": "אחריות",
+"challenge_tag": "baseline",
+"text": "אם אני מתחייב למשהו אני עוקב עד שהוא הושלם או הועבר בצורה מסודרת",
+"options": [
+"כלל לא מסכים",
+"לא מסכים",
+"ניטרלי",
+"מסכים",
+"מסכים מאוד"
+],
+"format": "agreement5",
+"statement_type": "היגד ישיר",
+"negation": 0,
+"plain_meaning": "האם אתה עוקב אחר התחייבות עד להשלמתה או העברתה?"
+},
+{
+"id": "SR-147",
+"family_id": "F-030",
+"topic": "אחריות",
+"challenge_tag": "frequency",
+"text": "באיזו תדירות נכון לומר שאם אני מתחייב למשהו אני עוקב עד שהוא הושלם או הועבר בצורה מסודרת?",
+"options": [
+"אף פעם",
+"לעיתים רחוקות",
+"לפעמים",
+"לעיתים קרובות",
+"תמיד"
+],
+"format": "frequency5",
+"statement_type": "תדירות",
+"negation": 0,
+"plain_meaning": "האם אתה עוקב אחר התחייבות עד להשלמתה או העברתה?"
+},
+{
+"id": "SR-148",
+"family_id": "F-030",
+"topic": "אחריות",
+"challenge_tag": "question",
+"text": "האם אתה עוקב אחר התחייבות עד להשלמתה או העברתה?",
+"options": [
+"כן",
+"לא"
+],
+"format": "yes_no",
+"statement_type": "שאלה ישירה",
+"negation": 0,
+"plain_meaning": "האם אתה עוקב אחר התחייבות עד להשלמתה או העברתה?"
+},
+{
+"id": "SR-149",
+"family_id": "F-030",
+"topic": "אחריות",
+"challenge_tag": "double_negation",
+"text": "לא נכון לומר שמעולם לא היה מצב שבו אתה עוקב אחר התחייבות עד להשלמתה או העברתה",
+"options": [
+"כלל לא מסכים",
+"לא מסכים",
+"ניטרלי",
+"מסכים",
+"מסכים מאוד"
+],
+"format": "agreement5",
+"statement_type": "שלילה כפולה",
+"negation": 2,
+"plain_meaning": "האם אתה עוקב אחר התחייבות עד להשלמתה או העברתה?"
+},
+{
+"id": "SR-150",
+"family_id": "F-030",
+"topic": "אחריות",
+"challenge_tag": "contextual",
+"text": "גם במצב לא נוח, אם אני מתחייב למשהו אני עוקב עד שהוא הושלם או הועבר בצורה מסודרת",
+"options": [
+"נכון לגביי",
+"לא נכון לגביי"
+],
+"format": "true_false",
+"statement_type": "הקשר נוסף",
+"negation": 0,
+"plain_meaning": "האם אתה עוקב אחר התחייבות עד להשלמתה או העברתה?"
+},
+{
+"id": "SR-151",
+"family_id": "F-031",
+"topic": "דיווח על חריגות",
+"challenge_tag": "baseline",
+"text": "דיווחתי כששמתי לב להתנהגות שעלולה לפגוע בארגון",
+"options": [
+"כלל לא מסכים",
+"לא מסכים",
+"ניטרלי",
+"מסכים",
+"מסכים מאוד"
+],
+"format": "agreement5",
+"statement_type": "היגד ישיר",
+"negation": 0,
+"plain_meaning": "האם אתה מדווח על התנהגות שעלולה לפגוע בארגון?"
+},
+{
+"id": "SR-152",
+"family_id": "F-031",
+"topic": "דיווח על חריגות",
+"challenge_tag": "frequency",
+"text": "באיזו תדירות נכון לומר שדיווחתי כששמתי לב להתנהגות שעלולה לפגוע בארגון?",
+"options": [
+"אף פעם",
+"לעיתים רחוקות",
+"לפעמים",
+"לעיתים קרובות",
+"תמיד"
+],
+"format": "frequency5",
+"statement_type": "תדירות",
+"negation": 0,
+"plain_meaning": "האם אתה מדווח על התנהגות שעלולה לפגוע בארגון?"
+},
+{
+"id": "SR-153",
+"family_id": "F-031",
+"topic": "דיווח על חריגות",
+"challenge_tag": "question",
+"text": "האם אתה מדווח על התנהגות שעלולה לפגוע בארגון?",
+"options": [
+"כן",
+"לא"
+],
+"format": "yes_no",
+"statement_type": "שאלה ישירה",
+"negation": 0,
+"plain_meaning": "האם אתה מדווח על התנהגות שעלולה לפגוע בארגון?"
+},
+{
+"id": "SR-154",
+"family_id": "F-031",
+"topic": "דיווח על חריגות",
+"challenge_tag": "double_negation",
+"text": "לא נכון לומר שמעולם לא היה מצב שבו אתה מדווח על התנהגות שעלולה לפגוע בארגון",
+"options": [
+"כלל לא מסכים",
+"לא מסכים",
+"ניטרלי",
+"מסכים",
+"מסכים מאוד"
+],
+"format": "agreement5",
+"statement_type": "שלילה כפולה",
+"negation": 2,
+"plain_meaning": "האם אתה מדווח על התנהגות שעלולה לפגוע בארגון?"
+},
+{
+"id": "SR-155",
+"family_id": "F-031",
+"topic": "דיווח על חריגות",
+"challenge_tag": "contextual",
+"text": "גם במצב לא נוח, דיווחתי כששמתי לב להתנהגות שעלולה לפגוע בארגון",
+"options": [
+"נכון לגביי",
+"לא נכון לגביי"
+],
+"format": "true_false",
+"statement_type": "הקשר נוסף",
+"negation": 0,
+"plain_meaning": "האם אתה מדווח על התנהגות שעלולה לפגוע בארגון?"
+},
+{
+"id": "SR-156",
+"family_id": "F-032",
+"topic": "דיווח על חריגות",
+"challenge_tag": "baseline",
+"text": "התעלמתי מחריגה קטנה כי לא רציתי להסתבך",
+"options": [
+"כלל לא מסכים",
+"לא מסכים",
+"ניטרלי",
+"מסכים",
+"מסכים מאוד"
+],
+"format": "agreement5",
+"statement_type": "היגד ישיר",
+"negation": 0,
+"plain_meaning": "האם התעלמת מחריגה כדי להימנע מאי נעימות?"
+},
+{
+"id": "SR-157",
+"family_id": "F-032",
+"topic": "דיווח על חריגות",
+"challenge_tag": "frequency",
+"text": "באיזו תדירות נכון לומר שהתעלמתי מחריגה קטנה כי לא רציתי להסתבך?",
+"options": [
+"אף פעם",
+"לעיתים רחוקות",
+"לפעמים",
+"לעיתים קרובות",
+"תמיד"
+],
+"format": "frequency5",
+"statement_type": "תדירות",
+"negation": 0,
+"plain_meaning": "האם התעלמת מחריגה כדי להימנע מאי נעימות?"
+},
+{
+"id": "SR-158",
+"family_id": "F-032",
+"topic": "דיווח על חריגות",
+"challenge_tag": "question",
+"text": "האם התעלמת מחריגה כדי להימנע מאי נעימות?",
+"options": [
+"כן",
+"לא"
+],
+"format": "yes_no",
+"statement_type": "שאלה ישירה",
+"negation": 0,
+"plain_meaning": "האם התעלמת מחריגה כדי להימנע מאי נעימות?"
+},
+{
+"id": "SR-159",
+"family_id": "F-032",
+"topic": "דיווח על חריגות",
+"challenge_tag": "double_negation",
+"text": "לא נכון לומר שמעולם לא היה מצב שבו התעלמת מחריגה כדי להימנע מאי נעימות",
+"options": [
+"כלל לא מסכים",
+"לא מסכים",
+"ניטרלי",
+"מסכים",
+"מסכים מאוד"
+],
+"format": "agreement5",
+"statement_type": "שלילה כפולה",
+"negation": 2,
+"plain_meaning": "האם התעלמת מחריגה כדי להימנע מאי נעימות?"
+},
+{
+"id": "SR-160",
+"family_id": "F-032",
+"topic": "דיווח על חריגות",
+"challenge_tag": "contextual",
+"text": "גם במצב לא נוח, התעלמתי מחריגה קטנה כי לא רציתי להסתבך",
+"options": [
+"נכון לגביי",
+"לא נכון לגביי"
+],
+"format": "true_false",
+"statement_type": "הקשר נוסף",
+"negation": 0,
+"plain_meaning": "האם התעלמת מחריגה כדי להימנע מאי נעימות?"
 }
 ]
 }
