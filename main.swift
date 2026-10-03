@@ -186,20 +186,104 @@ func ask(_ text: String, _ png: Data?, _ onPartial: @escaping @Sendable (String)
     return acc.isEmpty ? "No answer" : acc
 }
 
-// Main display, excluding this app's own window. Image lives in memory only — never written to disk.
+// What to read: whole main display, one app's window, or a dragged region. Saved in UserDefaults.
+enum Source: Equatable {
+    case screen
+    case window(bundleID: String, windowID: CGWindowID, name: String)
+    case region(CGRect)   // main display points, top-left origin
+
+    var label: String {
+        switch self {
+        case .screen: "כל המסך"
+        case .window(_, _, let n): n
+        case .region: "אזור נבחר"
+        }
+    }
+    static func load() -> Source {
+        let d = UserDefaults.standard
+        switch d.string(forKey: "source") {
+        case "window": return .window(bundleID: d.string(forKey: "srcBundle") ?? "", windowID: CGWindowID(d.integer(forKey: "srcWindow")), name: d.string(forKey: "srcName") ?? "")
+        case "region": if let s = d.string(forKey: "srcRect") { return .region(NSRectFromString(s)) }
+        default: break
+        }
+        return .screen
+    }
+    func save() {
+        let d = UserDefaults.standard
+        switch self {
+        case .screen: d.set("screen", forKey: "source")
+        case .window(let b, let w, let n): d.set("window", forKey: "source"); d.set(b, forKey: "srcBundle"); d.set(Int(w), forKey: "srcWindow"); d.set(n, forKey: "srcName")
+        case .region(let r): d.set("region", forKey: "source"); d.set(NSStringFromRect(r), forKey: "srcRect")
+        }
+    }
+}
+nonisolated(unsafe) var source = Source.load()
+nonisolated(unsafe) var visibleWindows: [(bundleID: String, windowID: CGWindowID, name: String)] = []   // refreshed every capture, for the menu
+
+// Image lives in memory only — never written to disk.
 func captureScreen() async throws -> CGImage {
     let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+    let me = ProcessInfo.processInfo.processIdentifier
+    let wins = content.windows.filter { w in
+        guard let app = w.owningApplication, app.processID != me, w.windowLayer == 0, w.frame.width > 200, w.frame.height > 150 else { return false }
+        return true
+    }
+    visibleWindows = wins.map { w in
+        let app = w.owningApplication!.applicationName, t = w.title ?? ""
+        return (w.owningApplication!.bundleIdentifier, w.windowID, t.isEmpty ? app : "\(app) — \(t.prefix(40))")
+    }
+    let scale = Int(NSScreen.main?.backingScaleFactor ?? 2)
+    let cfg = SCStreamConfiguration(); cfg.showsCursor = false
+    if case .window(let bundle, let id, _) = source {
+        // same window if still open, else the app's largest window (browser tab titles change)
+        if let w = wins.first(where: { $0.windowID == id })
+            ?? wins.filter({ $0.owningApplication?.bundleIdentifier == bundle }).max(by: { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }) {
+            cfg.width = Int(w.frame.width) * scale; cfg.height = Int(w.frame.height) * scale
+            return try await SCScreenshotManager.captureImage(contentFilter: SCContentFilter(desktopIndependentWindow: w), configuration: cfg)
+        }
+        throw NSError(domain: "ScreenReader", code: 2, userInfo: [NSLocalizedDescriptionKey: "החלון שנבחר סגור — בחר מקור אחר מהתפריט"])
+    }
     let screenID = NSScreen.main?.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
     guard let display = content.displays.first(where: { $0.displayID == screenID }) ?? content.displays.first
     else { throw NSError(domain: "ScreenReader", code: 1, userInfo: [NSLocalizedDescriptionKey: "No display"]) }
-    let me = content.applications.filter { $0.processID == ProcessInfo.processInfo.processIdentifier }
-    let filter = SCContentFilter(display: display, excludingApplications: me, exceptingWindows: [])
-    let cfg = SCStreamConfiguration()
-    let scale = Int(NSScreen.main?.backingScaleFactor ?? 2)
-    cfg.width = display.width * scale
-    cfg.height = display.height * scale
-    cfg.showsCursor = false
+    let filter = SCContentFilter(display: display, excludingApplications: content.applications.filter { $0.processID == me }, exceptingWindows: [])
+    if case .region(let r) = source {
+        cfg.sourceRect = r
+        cfg.width = Int(r.width) * scale; cfg.height = Int(r.height) * scale
+    } else {
+        cfg.width = display.width * scale; cfg.height = display.height * scale
+    }
     return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: cfg)
+}
+
+// Full-screen dim overlay: drag a rectangle, Esc cancels. Returns the rect in display points, top-left origin.
+@MainActor final class RegionPicker: NSWindow {
+    var start: NSPoint?, box = NSView(), done: ((CGRect?) -> Void)?
+    init(_ done: @escaping (CGRect?) -> Void) {
+        let f = NSScreen.main!.frame
+        super.init(contentRect: f, styleMask: .borderless, backing: .buffered, defer: false)
+        self.done = done
+        level = .screenSaver; isOpaque = false; backgroundColor = NSColor.black.withAlphaComponent(0.25); ignoresMouseEvents = false
+        box.wantsLayer = true; box.layer?.borderColor = NSColor.systemBlue.cgColor; box.layer?.borderWidth = 2
+        box.layer?.backgroundColor = NSColor.systemBlue.withAlphaComponent(0.12).cgColor
+        contentView = NSView(); contentView!.addSubview(box)
+        let hint = NSTextField(labelWithString: "גרור מסביב לאזור של השאלות · Esc לביטול")
+        hint.font = .systemFont(ofSize: 20, weight: .semibold); hint.textColor = .white; hint.sizeToFit()
+        hint.setFrameOrigin(NSPoint(x: (f.width - hint.frame.width) / 2, y: f.height * 0.8)); contentView!.addSubview(hint)
+    }
+    override var canBecomeKey: Bool { true }
+    override func mouseDown(with e: NSEvent) { start = e.locationInWindow; box.frame = .zero }
+    override func mouseDragged(with e: NSEvent) {
+        guard let s = start else { return }
+        let p = e.locationInWindow
+        box.frame = NSRect(x: min(s.x, p.x), y: min(s.y, p.y), width: abs(p.x - s.x), height: abs(p.y - s.y))
+    }
+    override func mouseUp(with e: NSEvent) {
+        let r = box.frame, h = frame.height
+        finish(r.width > 40 && r.height > 30 ? CGRect(x: r.minX, y: h - r.maxY, width: r.width, height: r.height) : nil)
+    }
+    override func keyDown(with e: NSEvent) { if e.keyCode == 53 { finish(nil) } }
+    func finish(_ r: CGRect?) { orderOut(nil); done?(r); done = nil }
 }
 
 // MARK: App — small native window: what's on screen, the answer, nothing else.
@@ -215,7 +299,9 @@ func parseReply(_ s: String) -> (label: String?, q: String?, a: String?) {
     return (label, q, a)
 }
 
-@MainActor final class App: NSObject, NSApplicationDelegate {
+@MainActor final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
+    let sourceMenu = NSMenu()
+    var picker: RegionPicker?
     enum State { case idle, reading, paused, error }
     var panel: NSPanel!
     let dot = NSTextField(labelWithString: "●")
@@ -240,10 +326,35 @@ func parseReply(_ s: String) -> (label: String?, q: String?, a: String?) {
         statusItem.button?.image = NSImage(systemSymbolName: "text.viewfinder", accessibilityDescription: "קורא מסך")
         let m = NSMenu()
         pauseItem.target = self; m.addItem(pauseItem)
+        let src = NSMenuItem(title: "מה לקרוא", action: nil, keyEquivalent: "")
+        src.submenu = sourceMenu; sourceMenu.delegate = self; m.addItem(src)
         let show = NSMenuItem(title: "הצג / הסתר חלון", action: #selector(toggleWindow), keyEquivalent: "h"); show.target = self; m.addItem(show)
         m.addItem(.separator())
         let quit = NSMenuItem(title: "יציאה", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"); m.addItem(quit)
         statusItem.menu = m
+    }
+    nonisolated func menuNeedsUpdate(_ menu: NSMenu) {
+        MainActor.assumeIsolated {
+            menu.removeAllItems()
+            func add(_ t: String, _ on: Bool, _ sel: Selector, _ tag: Int = 0) {
+                let i = NSMenuItem(title: t, action: sel, keyEquivalent: ""); i.target = self; i.tag = tag; i.state = on ? .on : .off; menu.addItem(i)
+            }
+            add("כל המסך", source == .screen, #selector(pickScreen))
+            if case .region = source { add("אזור נבחר ✓ (סמן מחדש…)", true, #selector(pickRegion)) } else { add("סמן אזור…", false, #selector(pickRegion)) }
+            menu.addItem(.separator())
+            let h = NSMenuItem(title: "חלון מסוים:", action: nil, keyEquivalent: ""); h.isEnabled = false; menu.addItem(h)
+            var curID: CGWindowID = 0
+            if case .window(_, let id, _) = source { curID = id }
+            for (n, w) in visibleWindows.enumerated() { add(w.name, w.windowID == curID, #selector(pickWindow(_:)), n) }
+            if visibleWindows.isEmpty { let e = NSMenuItem(title: "(הפעל קריאה כדי לראות חלונות)", action: nil, keyEquivalent: ""); e.isEnabled = false; menu.addItem(e) }
+        }
+    }
+    func setSource(_ s: Source) { source = s; s.save(); lastPrint = []; lastText = ""; render(); if state != .reading { start() } }
+    @objc func pickScreen() { setSource(.screen) }
+    @objc func pickWindow(_ i: NSMenuItem) { guard i.tag < visibleWindows.count else { return }; let w = visibleWindows[i.tag]; setSource(.window(bundleID: w.bundleID, windowID: w.windowID, name: w.name)) }
+    @objc func pickRegion() {
+        picker = RegionPicker { [weak self] r in if let r { self?.setSource(.region(r)) }; self?.picker = nil }
+        picker?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
     }
     @objc func toggleWindow() { panel.isVisible ? panel.orderOut(nil) : panel.orderFrontRegardless() }
 
@@ -301,7 +412,7 @@ func parseReply(_ s: String) -> (label: String?, q: String?, a: String?) {
     func render() {
         let (text, color): (String, NSColor) = switch state {
             case .idle: ("מוכן", .secondaryLabelColor)
-            case .reading: ("מקליט · אוטומטי", .systemRed)
+            case .reading: ("מקליט · \(source.label)", .systemRed)
             case .paused: ("מושהה · לחץ להמשך", .systemOrange)
             case .error: ("שגיאה", .systemRed)
         }
