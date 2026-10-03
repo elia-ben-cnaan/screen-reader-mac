@@ -32,7 +32,7 @@ jobs:
           mkdir -p shots
           for u in 1 2 3 4 5 6 7; do last=9; [ $u = 6 ] && last=$(python3 -c "import json;print(len(json.load(open('test/self_report/bank.json')))-1)"); for q in $(seq -1 $last); do
             n=$(printf "u%d_q%02d.png" $u $((q+1)))
-            timeout 30 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --disable-gpu --hide-scrollbars --window-size=1000,900 --screenshot="$PWD/shots/$n" "file://$PWD/test/sim5/index.html?unit=$u&q=$q" 2>/dev/null
+            perl -e 'alarm 30; exec @ARGV' "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --disable-gpu --hide-scrollbars --window-size=1000,900 --screenshot="$PWD/shots/$n" "file://$PWD/test/sim5/index.html?unit=$u&q=$q" 2>/dev/null
           done; done
           echo "screens: $(ls shots | wc -l)"
           ScreenReader.app/Contents/MacOS/ScreenReader --run-sim shots/*.png | tee sim-run.tsv | awk 'NR%25==0{print "progress", NR; fflush()}' || true

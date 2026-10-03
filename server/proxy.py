@@ -37,6 +37,16 @@ GUIDE = """How to solve each kind (use the unit instructions in CONTEXT when pre
 - Cube nets / folding, rotation vs mirror, hidden figure, dominoes: reason from the image; a mirror image is never a rotation.
 - Attention / accuracy (compare strings, count symbols): compare character by character from the image, not the OCR.
 - English: vocabulary, restatement (same meaning, not just same words), reading comprehension from the text only.
+- True / False / Cannot tell (נכון / לא נכון / לא ניתן לדעת) on a short set of rules + facts: treat the given rules
+  as the COMPLETE procedure ("על סמך הכתוב/הנוהל בלבד"). Method: (1) write each rule as "IF condition THEN result";
+  (2) compute every condition from the facts exactly (compare amounts to thresholds, subtract minutes from departure
+  times, check every listed exception such as urgent/critical cases); (3) decide:
+  נכון = the claim follows necessarily. לא נכון = the rules+facts contradict the claim — including "X was required"
+  when no rule that requires X applies (every triggering condition is false), and a general claim that a listed
+  exception or a fact violates. לא ניתן לדעת = only when the claim depends on something the text never states.
+  Traps: "only if A" does not mean A alone is enough; a rule "no B -> returned" does not mean every return is because
+  of no B (other rules may cause it), and a rejection never tells you which other documents were included.
+  Do not answer לא ניתן לדעת just because a value must be calculated — calculate it.
 - Numbers on screen: Hebrew right-to-left text can scramble the order of numbers in OCR; trust the image for order."""
 
 PROMPT = """You assist with a multiple-choice practice simulator (Hebrew or English). Input: noisy OCR of the captured screen, sometimes an image of it, and CONTEXT = instructions of the current unit (and a reading passage) seen earlier.
@@ -96,8 +106,9 @@ def gemini(key, model, text, image, context, strong=False):
         parts.append({"inline_data": {"mime_type": "image/png", "data": image}})
     parts.append({"text": (f"CONTEXT:\n{context}\n\n" if context else "") + "SCREEN OCR:\n" + text})
     gen = {"maxOutputTokens": 2500 if not strong else 6000}
-    if not strong:
-        gen["thinkingConfig"] = {"thinkingBudget": 1024}
+    if not strong:   # true/false/cannot-tell logic needs more reasoning than a lookup question
+        gen["thinkingConfig"] = {"thinkingBudget": 3072 if "לא ניתן לדעת" in text else 1024}
+        gen["maxOutputTokens"] = 5000 if "לא ניתן לדעת" in text else gen["maxOutputTokens"]
     body = {"system_instruction": {"parts": [{"text": PROMPT}]},
             "contents": [{"role": "user", "parts": parts}], "generationConfig": gen}
     req = urllib.request.Request(

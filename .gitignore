@@ -1,3 +1,4 @@
 Config.swift
 ScreenReader.app/
 *.zip
+.claude/
