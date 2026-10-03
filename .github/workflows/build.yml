@@ -2,6 +2,11 @@ name: build
 on:
   push: { branches: [main] }
   workflow_dispatch:
+    inputs:
+      full:
+        description: "Full e2e (all units x10 + all 300 SELF_REPORT). Default: small sample (~1/6 of the minutes)"
+        type: boolean
+        default: false
 permissions: { contents: write }
 jobs:
   mac:
@@ -28,9 +33,10 @@ jobs:
             echo "=== $f"; ScreenReader.app/Contents/MacOS/ScreenReader --explain $f.png || true
           done
           # full simulator run: instructions + 10 questions per unit, scored against the answer key
-          (cd test/sim5 && PER_UNIT=10 python3 build.py)   # units 1-5: 10 each; unit 6: whole SELF_REPORT bank
+          if [ "${{ inputs.full }}" = "true" ]; then PU=10; SRN=0; else PU=3; SRN=30; fi
+          (cd test/sim5 && PER_UNIT=$PU SR_LIMIT=$SRN python3 build.py)   # units 1-5: 10 each; unit 6: whole SELF_REPORT bank
           mkdir -p shots
-          for u in 1 2 3 4 5 6 7; do last=9; [ $u = 6 ] && last=$(python3 -c "import json;print(len(json.load(open('test/self_report/bank.json')))-1)"); for q in $(seq -1 $last); do
+          for u in 1 2 3 4 5 6 7; do last=$(python3 -c "import json;k=json.load(open('test/sim5/key.json'))[$u-1];print(len(k.get('answers') or k.get('items') or k.get('formats'))-1)"); for q in $(seq -1 $last); do
             n=$(printf "u%d_q%02d.png" $u $((q+1)))
             perl -e 'alarm 30; exec @ARGV' "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --disable-gpu --hide-scrollbars --window-size=1000,900 --screenshot="$PWD/shots/$n" "file://$PWD/test/sim5/index.html?unit=$u&q=$q" 2>/dev/null
           done; done

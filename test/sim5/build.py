@@ -290,6 +290,8 @@ for ui, (name, instr, gen) in enumerate(UNITS):
 # SELF_REPORT section: every item of test/self_report/bank.json, options as defined per item (no correct answer)
 SR = json.load(open(os.path.join(OUT, "..", "self_report", "bank.json")))
 if os.environ.get("SR_SHUFFLE"): R.shuffle(SR)
+if int(os.environ.get("SR_LIMIT", "0")):   # CI sample: every Nth item so all challenge types stay covered
+    n = int(os.environ["SR_LIMIT"]); step = max(1, len(SR) // n); SR = SR[::step][:n]
 data.append({"name": "שאלון אישי", "sr": True,
              "instr": "בחלק זה יוצגו היגדים ושאלות על התנהגותך ועמדותיך. אין תשובות נכונות או שגויות. בחרו את התשובה המתארת אתכם בצורה הטובה ביותר.",
              "qs": [{"stem": f"<b class=big>{i['text']}</b>", "opts": i["options"], "id": i["id"]} for i in SR]})
