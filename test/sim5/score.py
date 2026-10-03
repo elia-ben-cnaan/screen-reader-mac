@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Score `ScreenReader --run-sim` output (TSV: file kind answer conf plain options neg ocr_ms server_ms) against key.json.
-Files: u<unit>_q<nn>.png, q00 = unit instructions. Units 1-5 objective (answer key), unit 6 = SELF_REPORT bank."""
+"""Score `ScreenReader --run-sim` output (TSV: file kind answer conf plain options neg ocr_ms server_ms format) against key.json.
+Files: u<unit>_q<nn>.png, q00 = unit instructions. Units 1-5 objective (answer key), unit 6 = SELF_REPORT bank, unit 7 = formats."""
 import json, re, sys, os, statistics
 key = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "key.json")))
 # must survive word for word (מעולם is exempt only inside a resolved double negation)
@@ -8,11 +8,17 @@ QUAL = ["לפעמים", "תמיד", "בדרך כלל", "מעולם", "אף פע�
 NO_HINT = ["מומלץ", "כדאי לבחור", "התשובה הנכונה", "עדיף לענות"]
 words = lambda s: {w.strip("?,.") for w in s.split() if len(w.strip("?,.")) >= 4}
 obj = dict(ok=0, tot=0, lost=0); instr = [0, 0]; fails = {}; sr = dict(ok=0, tot=0); lat = []
+fm = dict(ok=0, tot=0)
+def fnorm(fmt, a):
+    a = re.sub(r"\s+", "", a).replace("<-", "←").replace("->", "→").strip(".")
+    if fmt == "multi": return "+".join(sorted(x for x in re.split(r"[+,&]", a) if x))
+    if fmt == "order": return "←".join(x for x in re.split(r"[←,]", a) if x)
+    return a
 def fail(group, msg): fails.setdefault(group, []).append(msg)
 warns = {}
 def warn(group, msg): warns.setdefault(group, []).append(msg)
 for line in open(sys.argv[1]):
-    f = line.rstrip("\n").split("\t") + [""] * 9
+    f = line.rstrip("\n").split("\t") + [""] * 10
     m = re.match(r"u(\d)_q(\d+)\.png", f[0])
     if not m: continue
     u, q = int(m[1]), int(m[2])
@@ -22,6 +28,12 @@ for line in open(sys.argv[1]):
         if f[1] != "instructions": fail("instructions", f"u{u}: {f[1]}")
         continue
     k = key[u - 1]
+    if "formats" in k:                                  # unit 7: typed / order / multi
+        fm["tot"] += 1; it = k["formats"][q - 1]
+        if f[1] != "question": fail("formats: not answered / misrouted", f"u{u} q{q}: {f[1]}")
+        elif fnorm(it["format"], f[2]) == fnorm(it["format"], it["answer"]) and (f[9] or "choice") == it["format"]: fm["ok"] += 1
+        else: fail("formats: wrong answer/format", f"u{u} q{q}: got {f[2]!r} FORMAT={f[9] or '-'} expected {it['answer']!r} {it['format']}")
+        continue
     if "answers" in k:                                  # objective routes: regression
         obj["tot"] += 1; exp = k["answers"][q - 1]
         if f[1] != "question": obj["lost"] += 1; fail("objective: not answered / misrouted", f"u{u} q{q}: {f[1]}")
@@ -47,6 +59,7 @@ for line in open(sys.argv[1]):
         for g, msg in bad: fail(f"self_report: {g}", f"{tag}: {msg}")
     else: sr["ok"] += 1
 print(f"OBJECTIVE (regression) {obj['ok']}/{obj['tot']} · not answered {obj['lost']}")
+if fm["tot"]: print(f"FORMATS (typed/order/multi) {fm['ok']}/{fm['tot']}")
 print(f"SELF_REPORT {sr['ok']}/{sr['tot']} passed all checks")
 print(f"INSTRUCTIONS recognised {instr[0]}/{instr[1]}")
 if lat: print(f"LATENCY ocr+server ms: avg {int(statistics.mean(lat))} · median {int(statistics.median(lat))} · worst {max(lat)} (n={len(lat)})")

@@ -29,7 +29,7 @@ jobs:
           # full simulator run: instructions + 10 questions per unit, scored against the answer key
           (cd test/sim5 && PER_UNIT=10 python3 build.py)   # units 1-5: 10 each; unit 6: whole SELF_REPORT bank
           mkdir -p shots
-          for u in 1 2 3 4 5 6; do last=9; [ $u = 6 ] && last=$(python3 -c "import json;print(len(json.load(open('test/self_report/bank.json')))-1)"); for q in $(seq -1 $last); do
+          for u in 1 2 3 4 5 6 7; do last=9; [ $u = 6 ] && last=$(python3 -c "import json;print(len(json.load(open('test/self_report/bank.json')))-1)"); for q in $(seq -1 $last); do
             n=$(printf "u%d_q%02d.png" $u $((q+1)))
             "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --disable-gpu --hide-scrollbars --window-size=1000,900 --screenshot="$PWD/shots/$n" "file://$PWD/test/sim5/index.html?unit=$u&q=$q" 2>/dev/null
           done; done

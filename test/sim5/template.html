@@ -48,6 +48,9 @@ function render() {
     $('meta').textContent = `פרק ${ui + 1}: ${u.name} · שאלה ${qi + 1} מתוך ${u.qs.length}`;
     $('stem').innerHTML = q.stem;
     $('opts').style.gridTemplateColumns = u.sr ? `repeat(${q.opts.length}, 1fr)` : '1fr 1fr';
+    if (q.fmt === 'typed') { $('opts').style.gridTemplateColumns = '1fr'; $('opts').innerHTML = '<label><span class=lbl>תשובה:</span><input id=typed type=text inputmode=numeric style="font-size:20px;padding:6px;width:220px"></label>'; return; }
+    if (q.fmt === 'order') { $('opts').innerHTML = q.opts.map((o, i) => `<label><span class=lbl>${HE[i]}.</span><span style="flex:1">${o}</span><input type=number min=1 max=${q.opts.length} placeholder="#" style="width:56px;font-size:18px"></label>`).join(''); return; }
+    if (q.fmt === 'multi') { $('opts').innerHTML = q.opts.map((o, i) => `<label><input type=checkbox name=m><span class=lbl>${HE[i]}.</span><span>${o}</span></label>`).join(''); return; }
     $('opts').innerHTML = q.opts.map((o, i) => u.sr ? `<label style="justify-content:center;text-align:center"><input type=radio name=a><span>${o}</span></label>`
                                                    : `<label><input type=radio name=a><span class=lbl>${HE[i]}.</span><span>${o}</span></label>`).join('');
   }
