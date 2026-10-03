@@ -7,12 +7,15 @@ Response: text/plain lines (format in PROMPT). If the fast model is unsure, a st
 "CHECKING" is sent first so the app can show it.
 Config (/root/.config/screenreader/): llm_key (Gemini API key), client_token (shared with the app).
 """
-import json, os, urllib.request, urllib.error
+import json, os, re, time, urllib.request, urllib.error
+blocked = {}   # model -> unix time its quota frees up (from Google's "retry in ...")
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 CONF = os.path.expanduser("~/.config/screenreader")
 PORT = int(os.environ.get("SR_PORT", "8099"))
-FAST = os.environ.get("SR_MODELS", "gemini-flash-latest,gemini-flash-lite-latest,gemini-3.8-flash").split(",")
+# Free tier gives each model its own small quota, so spread over several (best first).
+FAST = os.environ.get("SR_MODELS", "gemini-flash-latest,gemini-3.7-flash,gemini-3.6-flash,gemini-3.5-flash,"
+                      "gemini-flash-lite-latest,gemini-3.5-flash-lite,gemini-3.1-flash-lite").split(",")
 STRONG = os.environ.get("SR_STRONG", "gemini-3.8-flash").split(",")   # re-check must stay well under the app's 60s timeout
 
 GUIDE = """How to solve each kind (use the unit instructions in CONTEXT when present — they define the rules):
@@ -110,17 +113,27 @@ def first_ok(key, models, *a, **kw):
     """Busy/quota/unknown model -> next model. Returns (text, error)."""
     err = ""
     for m in models:
+        if blocked.get(m, 0) > time.time():
+            continue
         try:
             out = tidy(gemini(key, m, *a, **kw))
             if "KIND:" in out:
                 return out, ""
             err = "Model gave no usable reply"
+            print(f"{m} unusable reply", flush=True)
         except urllib.error.HTTPError as e:
-            err = f"Model error {e.code}: {e.read().decode()[:200]}"
+            body = e.read().decode()
+            err = f"Model error {e.code}: {body[:200]}"
+            if e.code == 429:   # remember until quota resets; per-minute limits come back fast, daily ones in hours
+                t = re.search(r"retry in (?:(\d+)h)?(?:(\d+)m)?([\d.]+)s", body)
+                wait = (int(t[1] or 0) * 3600 + int(t[2] or 0) * 60 + float(t[3])) if t else 60
+                blocked[m] = time.time() + wait
+            print(f"{m} HTTP {e.code}", flush=True)   # journalctl -u screenreader-proxy (no question text)
             if e.code not in (400, 404, 429, 500, 503):
                 break
         except Exception as e:
             err = f"Model error: {e}"
+            print(f"{m} {type(e).__name__}: {e}", flush=True)
     return "", err
 
 
