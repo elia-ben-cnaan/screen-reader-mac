@@ -17,5 +17,14 @@ jobs:
             "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --disable-gpu --window-size=1000,1100 --screenshot="$PWD/$f.png" "file://$PWD/test/$f.html" 2>/dev/null || true
           done
           ls q-*.png && ScreenReader.app/Contents/MacOS/ScreenReader --layout q-*.png || echo "skipped"
+      - name: End-to-end (OCR on Mac -> server -> answer)
+        env: { SR_SERVER: "${{ secrets.SR_SERVER }}", SR_TOKEN: "${{ secrets.SR_TOKEN }}" }
+        run: |
+          brew install tesseract tesseract-lang >/dev/null 2>&1 || true
+          mkdir -p ~/.config/screenreader && printf '%s\n%s\n' "$SR_SERVER" "$SR_TOKEN" > ~/.config/screenreader/server
+          for f in q-text q-shapes q-matrix; do
+            echo "=== $f"; ScreenReader.app/Contents/MacOS/ScreenReader --explain $f.png || true
+          done
+          rm -f ~/.config/screenreader/server
       - uses: softprops/action-gh-release@v2
         with: { tag_name: latest, name: "ScreenReader (latest build)", files: ScreenReader.zip, make_latest: true }
