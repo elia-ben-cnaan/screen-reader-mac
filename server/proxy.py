@@ -71,6 +71,10 @@ PLAIN: <the statement's real meaning as ONE short, simple Hebrew question. Resol
   "באיזו תדירות ...?" ; for agreement wording ask "עד כמה ...?" or "האם ...?">
 OPTIONS: <every response option visible on screen, exactly as written, in on-screen order, separated by " | ">
 NEG: <yes if the original wording contains a negation, else no>
+QUALIFIERS: <meaning-bearing words from the STATEMENT itself (not from the answer options) that must survive in PLAIN:
+  any of לפעמים, תמיד, בדרך כלל, מעולם, אף פעם, לעיתים, רק that appear in the statement, separated by " | ";
+  leave out "מעולם" only when it is part of a double negation you resolved; "-" if none>
+Copy each listed qualifier into PLAIN word for word (do not swap לפעמים for לעיתים or drop it).
 For OTHER:
 KIND: other
 
@@ -116,6 +120,16 @@ def tidy(out):
     f["ANSWER"] = lab[:1] if lab[:1] in LABELS else lab
     order = ["ANSWER", "KIND", "NUM", "Q", "A", "WHY", "CONF", "TRAP"]
     return "\n".join(f"{k}: {f[k]}" for k in order if k in f)
+
+
+MUST_KEEP = ["לפעמים", "תמיד", "בדרך כלל", "מעולם", "אף פעם", "לעיתים", "רק"]
+def missing_qualifiers(out):
+    """SELF_REPORT: qualifiers the model itself listed but then left out of PLAIN."""
+    f = {l.split(":", 1)[0].strip().upper(): l.split(":", 1)[1].strip() for l in out.splitlines() if ":" in l}
+    if f.get("KIND", "").lower() != "self_report":
+        return []
+    q = [w.strip() for w in f.get("QUALIFIERS", "").split("|") if w.strip() in MUST_KEEP]
+    return [w for w in q if w not in f.get("PLAIN", "")]
 
 
 def first_ok(key, models, *a, **kw):
@@ -173,6 +187,14 @@ class H(BaseHTTPRequestHandler):
         self.send_header("transfer-encoding", "chunked")
         self.end_headers()
         out, err = first_ok(key, FAST, *args)
+        miss = missing_qualifiers(out)
+        if miss:   # one corrective retry: PLAIN must keep every meaning-bearing qualifier
+            text, image, ctx = args
+            fix = f"{ctx}\nCORRECTION: your PLAIN dropped {', '.join(miss)}. Rewrite PLAIN keeping these words exactly."
+            again, _ = first_ok(key, FAST, text, image, fix)
+            if again and not missing_qualifiers(again):
+                out = again
+            print(f"qualifier retry {miss} -> {'fixed' if again and not missing_qualifiers(again) else 'still missing'}", flush=True)
         if out and "KIND: question" in out and "CONF: low" in out:
             self.chunk("CHECKING\n")                      # app shows "בודק שוב…"
             better, _ = first_ok(key, STRONG, *args, strong=True)

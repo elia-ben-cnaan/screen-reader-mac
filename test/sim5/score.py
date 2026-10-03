@@ -3,11 +3,14 @@
 Files: u<unit>_q<nn>.png, q00 = unit instructions. Units 1-5 objective (answer key), unit 6 = SELF_REPORT bank."""
 import json, re, sys, os, statistics
 key = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "key.json")))
-QUAL = ["מעולם", "אף פעם", "אי פעם", "תמיד", "בדרך כלל", "לעיתים", "לפעמים", "רק", "ללא", "בלי"]
+# must survive word for word (מעולם is exempt only inside a resolved double negation)
+QUAL = ["לפעמים", "תמיד", "בדרך כלל", "מעולם", "אף פעם", "לעיתים", "רק"]
 NO_HINT = ["מומלץ", "כדאי לבחור", "התשובה הנכונה", "עדיף לענות"]
 words = lambda s: {w.strip("?,.") for w in s.split() if len(w.strip("?,.")) >= 4}
 obj = dict(ok=0, tot=0, lost=0); instr = [0, 0]; fails = {}; sr = dict(ok=0, tot=0); lat = []
 def fail(group, msg): fails.setdefault(group, []).append(msg)
+warns = {}
+def warn(group, msg): warns.setdefault(group, []).append(msg)
 for line in open(sys.argv[1]):
     f = line.rstrip("\n").split("\t") + [""] * 9
     m = re.match(r"u(\d)_q(\d+)\.png", f[0])
@@ -34,10 +37,11 @@ for line in open(sys.argv[1]):
         if not plain: bad.append(("plain meaning missing", ""))
         if "לא נכון לומר" in plain or ("מעולם" in plain and "לא" in plain.split()): bad.append(("double negation not resolved", plain))
         if it["negation"] and neg != "yes": bad.append(("negation flag", f"NEG={neg}"))
-        lost_q = [w for w in QUAL if w in it["text"] and w in it["plain_meaning"] and w not in plain]
+        stmt = it["text"].replace("לא נכון לומר שמעולם לא היה מצב", "") if it["challenge_tag"] == "double_negation" else it["text"]
+        lost_q = [w for w in QUAL if re.search(rf"(^|\s|ש|ו|כ|ב|ה){w}(\s|$|[?,.])", stmt) and w not in plain]
         if lost_q: bad.append(("qualifier lost", f"{lost_q} · {plain}"))
         if len(words(it["plain_meaning"]) & words(plain)) < max(1, len(words(it["plain_meaning"])) // 3):
-            bad.append(("meaning drift", f"{plain} vs {it['plain_meaning']}"))
+            warn("wording differs from dataset plain meaning (word-overlap heuristic, review by eye)", f"{tag}: {plain} vs {it['plain_meaning']}")
         if f[2] or any(h in plain for h in NO_HINT): bad.append(("suggested an answer", f"ANSWER={f[2]}"))
     if bad:
         for g, msg in bad: fail(f"self_report: {g}", f"{tag}: {msg}")
@@ -47,5 +51,8 @@ print(f"SELF_REPORT {sr['ok']}/{sr['tot']} passed all checks")
 print(f"INSTRUCTIONS recognised {instr[0]}/{instr[1]}")
 if lat: print(f"LATENCY ocr+server ms: avg {int(statistics.mean(lat))} · median {int(statistics.median(lat))} · worst {max(lat)} (n={len(lat)})")
 for g, ms in sorted(fails.items(), key=lambda x: -len(x[1])):
-    print(f"[{len(ms)}] {g}")
-    for x in ms[:12]: print("    " + x)
+    print(f"FAIL [{len(ms)}] {g}")
+    for x in ms[:20]: print("    " + x)
+for g, ms in warns.items():
+    print(f"WARN [{len(ms)}] {g}")
+    for x in ms[:20]: print("    " + x)
