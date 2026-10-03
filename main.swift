@@ -7,7 +7,8 @@ import Vision
 import ScreenCaptureKit
 
 let interval: TimeInterval = 1.5          // seconds between capture checks
-let changeThreshold: Double = 0.004       // mean pixel diff (0..1) that counts as "changed"
+let changeThreshold: Double = 0.0015      // share of fingerprint cells that changed visibly = "new screen"
+let forceEvery = 4                         // re-OCR every Nth tick anyway (safety net, OCR is local)
 
 // MARK: OCR (shared by app + --selftest)
 let tesseractPath = ["/opt/homebrew/bin/tesseract", "/usr/local/bin/tesseract"].first { FileManager.default.isExecutableFile(atPath: $0) }
@@ -53,8 +54,8 @@ func normalize(_ s: String) -> String {
 }
 
 // 64x36 grayscale thumbnail used to skip OCR when the screen didn't change.
-func fingerprint(_ image: CGImage) -> [UInt8] {
-    let w = 64, h = 36
+// 192x108 is fine enough that swapping one line of question text changes many cells.
+func fingerprint(_ image: CGImage, w: Int = 192, h: Int = 108) -> [UInt8] {
     var px = [UInt8](repeating: 0, count: w * h)
     px.withUnsafeMutableBytes { buf in
         let ctx = CGContext(data: buf.baseAddress, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w,
@@ -66,8 +67,8 @@ func fingerprint(_ image: CGImage) -> [UInt8] {
 }
 func diff(_ a: [UInt8], _ b: [UInt8]) -> Double {
     guard a.count == b.count, !a.isEmpty else { return 1 }
-    var t = 0; for i in 0..<a.count { t += abs(Int(a[i]) - Int(b[i])) }
-    return Double(t) / Double(a.count * 255)
+    var n = 0; for i in 0..<a.count where abs(Int(a[i]) - Int(b[i])) > 12 { n += 1 }
+    return Double(n) / Double(a.count)
 }
 
 // MARK: Practice — explain the practice question currently on screen (on demand, never clicks/types)
@@ -156,7 +157,7 @@ func croppedPNG(_ image: CGImage, _ rect: CGRect) -> Data? {
 func questionKey(_ text: String, _ image: CGImage, _ l: Layout) -> String {
     let t = text.replacingOccurrences(of: #"\b\d{1,2}:\d{2}(:\d{2})?\b"#, with: "", options: .regularExpression)
     guard l.visual, let c = image.cropping(to: l.crop.integral) else { return t }
-    return t + "|" + fingerprint(c).map { String($0 >> 5) }.joined()
+    return t + "|" + fingerprint(c, w: 64, h: 36).map { String($0 >> 5) }.joined()
 }
 nonisolated(unsafe) var answerCache: [String: (mode: String, answer: String)] = [:]
 
@@ -344,7 +345,7 @@ func refreshWindowList() async {
     var hasChosenSource: Bool { UserDefaults.standard.string(forKey: "source") != nil }
     var onFloat: (() -> Void)?
     var picker: RegionPicker?
-    private var timer: Timer?, busy = false, lastPrint: [UInt8] = [], lastText = "", lastImage: CGImage?, askTask: Task<Void, Never>?
+    private var timer: Timer?, busy = false, ticks = 0, lastPrint: [UInt8] = [], lastText = "", lastImage: CGImage?, askTask: Task<Void, Never>?
 
     init() {
         if let d = try? Data(contentsOf: sessionURL), let s = try? JSONDecoder().decode(Session.self, from: d), s.end == nil, !s.units.isEmpty {
@@ -405,7 +406,8 @@ func refreshWindowList() async {
                 let img = try await captureScreen()
                 windows = visibleWindows
                 let fp = fingerprint(img)
-                if diff(fp, lastPrint) < changeThreshold { return }
+                ticks += 1
+                if diff(fp, lastPrint) < changeThreshold && ticks % forceEvery != 0 { return }
                 lastPrint = fp; lastImage = img
                 let text = try await Task.detached(priority: .utility) { normalize(try ocr(img)) }.value
                 let stable = text.replacingOccurrences(of: #"\b\d{1,2}:\d{2}(:\d{2})?\b"#, with: "", options: .regularExpression)
