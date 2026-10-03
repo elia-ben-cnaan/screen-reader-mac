@@ -13,10 +13,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 CONF = os.path.expanduser("~/.config/screenreader")
 PORT = int(os.environ.get("SR_PORT", "8099"))
-# Free tier gives each model its own small quota, so spread over several (best first).
-FAST = os.environ.get("SR_MODELS", "gemini-flash-latest,gemini-3.7-flash,gemini-3.6-flash,gemini-3.5-flash,"
-                      "gemini-flash-lite-latest,gemini-3.5-flash-lite,gemini-3.1-flash-lite").split(",")
-STRONG = os.environ.get("SR_STRONG", "gemini-3.8-flash").split(",")   # re-check must stay well under the app's 60s timeout
+# Paid tier (Tier 1). Order = preference; a model is skipped while Google reports it over quota.
+FAST = os.environ.get("SR_MODELS", "gemini-flash-latest,gemini-3.8-flash,gemini-flash-lite-latest").split(",")
+STRONG = os.environ.get("SR_STRONG", "gemini-pro-latest,gemini-3.8-flash").split(",")   # re-check of unsure answers (paid tier)
 
 GUIDE = """How to solve each kind (use the unit instructions in CONTEXT when present — they define the rules):
 - Analogies: find the exact relation in the given pair (part-whole, cause, degree, tool-use...), pick the option with the same relation in the same direction.
@@ -88,7 +87,7 @@ def gemini(key, model, text, image, context, strong=False):
     req = urllib.request.Request(
         f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
         data=json.dumps(body).encode(), headers={"content-type": "application/json", "x-goog-api-key": key})
-    with urllib.request.urlopen(req, timeout=15 if not strong else 25) as r:
+    with urllib.request.urlopen(req, timeout=15 if not strong else 35) as r:
         j = json.load(r)
     return "".join(p.get("text", "") for c in j.get("candidates", [])
                    for p in c.get("content", {}).get("parts", []) if not p.get("thought")).strip()
