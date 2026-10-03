@@ -19,6 +19,7 @@ jobs:
           ls q-*.png && ScreenReader.app/Contents/MacOS/ScreenReader --layout q-*.png || echo "skipped"
       - name: End-to-end (OCR on Mac -> server -> answer)   # uses model quota: run manually (Actions -> build -> Run workflow)
         if: github.event_name == 'workflow_dispatch'
+        timeout-minutes: 75
         env: { SR_SERVER: "${{ secrets.SR_SERVER }}", SR_TOKEN: "${{ secrets.SR_TOKEN }}" }
         run: |
           brew install tesseract tesseract-lang >/dev/null 2>&1 || true
@@ -31,9 +32,10 @@ jobs:
           mkdir -p shots
           for u in 1 2 3 4 5 6; do last=9; [ $u = 6 ] && last=$(python3 -c "import json;print(len(json.load(open('test/self_report/bank.json')))-1)"); for q in $(seq -1 $last); do
             n=$(printf "u%d_q%02d.png" $u $((q+1)))
-            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --disable-gpu --hide-scrollbars --window-size=1000,900 --screenshot="$PWD/shots/$n" "file://$PWD/test/sim5/index.html?unit=$u&q=$q" 2>/dev/null
+            timeout 30 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --disable-gpu --hide-scrollbars --window-size=1000,900 --screenshot="$PWD/shots/$n" "file://$PWD/test/sim5/index.html?unit=$u&q=$q" 2>/dev/null
           done; done
-          ScreenReader.app/Contents/MacOS/ScreenReader --run-sim shots/*.png > sim-run.tsv || true
+          echo "screens: $(ls shots | wc -l)"
+          ScreenReader.app/Contents/MacOS/ScreenReader --run-sim shots/*.png | tee sim-run.tsv | awk 'NR%25==0{print "progress", NR; fflush()}' || true
           cat sim-run.tsv; python3 test/sim5/score.py sim-run.tsv | tee sim-score.txt
           rm -f ~/.config/screenreader/server
       - uses: softprops/action-gh-release@v2
