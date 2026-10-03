@@ -294,6 +294,23 @@ data.append({"name": "שאלון אישי", "sr": True,
              "instr": "בחלק זה יוצגו היגדים ושאלות על התנהגותך ועמדותיך. אין תשובות נכונות או שגויות. בחרו את התשובה המתארת אתכם בצורה הטובה ביותר.",
              "qs": [{"stem": f"<b class=big>{i['text']}</b>", "opts": i["options"], "id": i["id"]} for i in SR]})
 key.append({"unit": len(data), "name": "SELF_REPORT", "items": SR})
+# Unit 7: non-single-choice formats (typed / order / multi). fmt + answer go to key.json only.
+FMT = [
+ ("typed", "כמה הם 17 + 25?", [], "42"),
+ ("typed", "רכבת נוסעת 60 קמ\"ש במשך 3 שעות. כמה קילומטרים עברה?", [], "180"),
+ ("typed", "מהו המספר הבא בסדרה: 3, 6, 12, 24, ?", [], "48"),
+ ("typed", "מחיר חולצה 80 ש\"ח. בהנחה של 25%, כמה ש\"ח יש לשלם?", [], "60"),
+ ("order", "סדרו את המספרים מהקטן לגדול:", ["19", "4", "33", "11"], "ב ← ד ← א ← ג"),
+ ("order", "סדרו את האירועים לפי סדר התרחשותם ביום:", ["ארוחת ערב", "השכמה", "ארוחת צהריים", "ארוחת בוקר"], "ב ← ד ← ג ← א"),
+ ("order", "סדרו את היחידות מהקטנה לגדולה:", ["מטר", "קילומטר", "מילימטר", "סנטימטר"], "ג ← ד ← א ← ב"),
+ ("multi", "סמן את כל המספרים הזוגיים:", ["14", "9", "22", "35"], "א + ג"),
+ ("multi", "סמן את כל היונקים:", ["כריש", "לוויתן", "עטלף", "תנין"], "ב + ג"),
+ ("multi", "סמן את כל המספרים המתחלקים ב-3 ללא שארית:", ["21", "10", "27", "16"], "א + ג"),
+]
+data.append({"name": "פורמטים שונים", "fmt": True,
+             "instr": "בפרק זה השאלות בפורמטים שונים: בחלק מהשאלות יש להקליד את התשובה בתיבה; בחלק יש לסדר את הפריטים בסדר הנכון (מספרו אותם 1-4); ובחלק יש לסמן את כל התשובות הנכונות (ייתכנו כמה).",
+             "qs": [{"stem": f"<b class=big>{t}</b>", "opts": o, "fmt": fm} for fm, t, o, _ in FMT]})
+key.append({"unit": len(data), "name": "FORMATS", "formats": [{"format": fm, "answer": a} for fm, _, _, a in FMT]})
 json.dump(key, open(os.path.join(OUT, "key.json"), "w"), ensure_ascii=False, indent=0)
 html = open(os.path.join(OUT, "template.html")).read().replace("/*DATA*/", json.dumps(data, ensure_ascii=False))
 open(os.path.join(OUT, "index.html"), "w").write(html)

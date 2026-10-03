@@ -298,7 +298,11 @@ func captureScreen() async throws -> CGImage {
 }
 
 // MARK: Session model — units (from instruction screens) holding answered questions. Saved as JSON while running.
-struct Item: Codable, Identifiable { var id = UUID(); var num: String; var question: String; var answer: String; var label: String; var why: String; var low: Bool; var ms: Int; var trap: String? }
+struct Item: Codable, Identifiable { var id = UUID(); var num: String; var question: String; var answer: String; var label: String; var why: String; var low: Bool; var ms: Int; var trap: String?
+    var format: String? = nil   // choice|typed|order|multi; nil (old saved sessions) = choice
+    var fmt: String { (format ?? "").isEmpty ? "choice" : format!.lowercased() }
+    var prompt: String? { switch fmt { case "typed": return "הקלד: \(label)"; case "order": return "סדר: \(label)"; case "multi": return "סמן: \(label)"; default: return nil } }
+}
 struct Unit: Codable, Identifiable { var id = UUID(); var title: String; var num: String; var summary: String; var visual: Bool; var passage = ""; var items: [Item] = [] }
 struct Session: Codable { var start = Date(); var end: Date?; var units: [Unit] = [] }
 let sessionURL: URL = {
@@ -527,7 +531,7 @@ func refreshWindowList() async {
             }
         case "question":
             if session!.units.isEmpty { session!.units.append(Unit(title: "כללי", num: "", summary: "", visual: false)) }
-            let it = Item(num: r["NUM"], question: r["Q"], answer: r["A"], label: r["ANSWER"], why: r["WHY"], low: r["CONF"].lowercased() == "low", ms: ms, trap: r["TRAP"].isEmpty ? nil : r["TRAP"])
+            let it = Item(num: r["NUM"], question: r["Q"], answer: r["A"], label: r["ANSWER"], why: r["WHY"], low: r["CONF"].lowercased() == "low", ms: ms, trap: r["TRAP"].isEmpty ? nil : r["TRAP"], format: r["FORMAT"].isEmpty ? nil : r["FORMAT"].lowercased())
             let ui = session!.units.count - 1
             if let i = session!.units[ui].items.firstIndex(where: { $0.question == it.question || (!it.num.isEmpty && $0.num == it.num) }) {
                 session!.units[ui].items[i] = it                         // came back to a question: update, don't duplicate
@@ -569,7 +573,8 @@ struct AnswerBlock: View {
                 Text(item.answer.isEmpty ? item.label : item.answer).font(.system(size: big, weight: .semibold)).lineLimit(2).minimumScaleFactor(0.5)
                 if item.low { Text("?").font(.system(size: big * 0.45, weight: .semibold)).foregroundStyle(.orange).help("המודל לא בטוח — כדאי לבדוק") }
             }
-            if !item.label.isEmpty { Text("תשובה \(item.label)").font(.system(size: big * 0.34, weight: .semibold)).foregroundStyle(Color.accentColor) }
+            if let p = item.prompt, !item.label.isEmpty { Text(p).font(.system(size: big * 0.34, weight: .semibold)).foregroundStyle(Color.accentColor).lineLimit(2).minimumScaleFactor(0.5) }
+            else if !item.label.isEmpty { Text("תשובה \(item.label)").font(.system(size: big * 0.34, weight: .semibold)).foregroundStyle(Color.accentColor) }
             if showWhy, !item.why.isEmpty { Text(item.why).font(.system(size: 12)).foregroundStyle(.secondary).padding(.top, 6) }
             if let t = item.trap { Text("⚠ מלכודת: \(t)").font(.system(size: showWhy ? 12 : 11)).foregroundStyle(.orange).lineLimit(showWhy ? 3 : 2).padding(.top, showWhy ? 2 : 0) }
         }
@@ -978,7 +983,7 @@ if args.count >= 3, args[1] == "--run-sim" {
             let rep = Reply(r?.answer ?? "")
             if rep.kind == "instructions" { ctx = "Unit \(rep["NUM"]) \(rep["UNIT"]): \(rep["SUMMARY"])" }
             print([(path as NSString).lastPathComponent, rep.kind.isEmpty ? "error" : rep.kind, rep["ANSWER"], rep["CONF"],
-                   rep["PLAIN"], rep["OPTIONS"], rep["NEG"], String(ocrMs), String(srvMs)].joined(separator: "\t"))
+                   rep["PLAIN"], rep["OPTIONS"], rep["NEG"], String(ocrMs), String(srvMs), rep["FORMAT"]].joined(separator: "\t"))
             fflush(stdout)
         }
         sem.signal()

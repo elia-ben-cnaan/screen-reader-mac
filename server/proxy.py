@@ -48,7 +48,9 @@ First classify the screen:
 - OTHER: anything else (menu, loading, score, unrelated app).
 Reply with these lines only, no extra text. Write every value (Q, A, WHY, UNIT, SUMMARY) in the same language as the question on screen:
 For QUESTION:
-ANSWER: <option label exactly as on screen, e.g. א/ב/ג/ד or 1/2/3/4>
+ANSWER: <option label exactly as on screen, e.g. א/ב/ג/ד or 1/2/3/4; for FORMAT typed: the value to type (number or word);
+  for FORMAT order: all labels in the correct order joined by " ← " (first ← ... ← last); for FORMAT multi: every correct label joined by " + ">
+FORMAT: <choice (pick one option) | typed (an input box, no options) | order (arrange items in order) | multi ("סמן את כל ה..." / select all that apply)>
 KIND: question
 NUM: <question number if visible, else ->
 Q: <the question, cleaned, max 20 words>
@@ -114,11 +116,25 @@ def tidy(out):
     f = {l.split(":", 1)[0].strip().upper(): l.split(":", 1)[1].strip() for l in lines if ":" in l}
     if f.get("KIND", "").lower() != "question":
         return "\n".join(lines)   # instructions / self_report / other pass through
+    fmt = f.get("FORMAT", "").strip().lower()
+    if fmt in ("typed", "order", "multi"):
+        f["FORMAT"] = fmt
+        lab = f.get("ANSWER", "").strip()
+        if fmt == "order":
+            parts = [p.strip(" .)(") for p in re.split(r"\s*(?:←|<-|→|->|,)\s*", lab) if p.strip(" .)(")]
+            lab = " ← ".join(parts)
+        elif fmt == "multi":
+            parts = [p.strip(" .)(") for p in re.split(r"\s*(?:\+|,|&| ו-?)\s*", lab) if p.strip(" .)(")]
+            lab = " + ".join(parts)
+        f["ANSWER"] = lab
+        order = ["ANSWER", "FORMAT", "KIND", "NUM", "Q", "A", "WHY", "CONF", "TRAP"]
+        return "\n".join(f"{k}: {f[k]}" for k in order if k in f)
+    if fmt: f["FORMAT"] = "choice"
     lab = f.get("ANSWER", "").strip(" .)(")
     if not lab and f.get("A", "")[:1] in LABELS and f.get("A", "")[1:2] in (".", ")", " ", ""):
         lab = f["A"][0]; f["A"] = f["A"][1:].strip(" .)")
     f["ANSWER"] = lab[:1] if lab[:1] in LABELS else lab
-    order = ["ANSWER", "KIND", "NUM", "Q", "A", "WHY", "CONF", "TRAP"]
+    order = ["ANSWER", "FORMAT", "KIND", "NUM", "Q", "A", "WHY", "CONF", "TRAP"]
     return "\n".join(f"{k}: {f[k]}" for k in order if k in f)
 
 
