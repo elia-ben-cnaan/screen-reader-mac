@@ -10,7 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 CONF = os.path.expanduser("~/.config/screenreader")
 PORT = int(os.environ.get("SR_PORT", "8099"))
-MODEL = os.environ.get("SR_MODEL", "gemini-flash-latest")
+MODELS = os.environ.get("SR_MODELS", "gemini-flash-latest,gemini-flash-lite-latest,gemini-3.8-flash").split(",")
 PROMPT = ("You solve practice-simulator questions shown on screen. Input: noisy OCR text of the whole screen "
           "(Hebrew or English) and, for visual questions, a cropped image of the question and options (shapes, "
           "matrices, sequences). Find the one active question and answer it. NO explanations. Reply in the "
@@ -27,7 +27,7 @@ def read(name):
         return ""
 
 
-def gemini_stream(key, text, image):
+def gemini_stream(key, text, image, model):
     parts = [{"text": "OCR text:\n" + text}]
     if image:
         parts.insert(0, {"inline_data": {"mime_type": "image/png", "data": image}})
@@ -35,9 +35,9 @@ def gemini_stream(key, text, image):
             "contents": [{"role": "user", "parts": parts}],
             "generationConfig": {"maxOutputTokens": 200, "thinkingConfig": {"thinkingBudget": 512}}}
     req = urllib.request.Request(
-        f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:streamGenerateContent?alt=sse",
+        f"https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?alt=sse",
         data=json.dumps(body).encode(), headers={"content-type": "application/json", "x-goog-api-key": key})
-    with urllib.request.urlopen(req, timeout=60) as r:
+    with urllib.request.urlopen(req, timeout=10) as r:
         for line in r:
             line = line.decode().strip()
             if not line.startswith("data:"):
@@ -68,13 +68,23 @@ class H(BaseHTTPRequestHandler):
         self.send_header("content-type", "text/plain; charset=utf-8")
         self.send_header("transfer-encoding", "chunked")
         self.end_headers()
+        err = ""
+        for model in MODELS:   # busy/quota (429/5xx) before any output -> next model
+            sent = False
+            try:
+                for t in gemini_stream(key, q.get("text", ""), q.get("image"), model):
+                    sent = True; self.chunk(t)
+                err = ""; break
+            except urllib.error.HTTPError as e:
+                err = f"\nModel error {e.code}: {e.read().decode()[:300]}"
+                if sent or e.code not in (400, 404, 429, 500, 503): break
+            except Exception as e:
+                err = f"\nModel error: {e}"
+                if sent: break
         try:
-            for t in gemini_stream(key, q.get("text", ""), q.get("image")):
-                self.chunk(t)
-        except urllib.error.HTTPError as e:
-            self.chunk(f"\nModel error {e.code}: {e.read().decode()[:300]}")
-        except Exception as e:
-            self.chunk(f"\nModel error: {e}")
+            if err: self.chunk(err)
+        except Exception:
+            pass
         self.wfile.write(b"0\r\n\r\n")
 
     def chunk(self, s):
