@@ -25,6 +25,15 @@ jobs:
           for f in q-text q-shapes q-matrix; do
             echo "=== $f"; ScreenReader.app/Contents/MacOS/ScreenReader --explain $f.png || true
           done
+          # full simulator run: instructions + 10 questions per unit, scored against the answer key
+          (cd test/sim5 && PER_UNIT=10 python3 build.py)
+          mkdir -p shots
+          for u in 1 2 3 4 5; do for q in $(seq -1 9); do
+            n=$(printf "u%d_q%02d.png" $u $((q+1)))
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --disable-gpu --hide-scrollbars --window-size=1000,900 --screenshot="$PWD/shots/$n" "file://$PWD/test/sim5/index.html?unit=$u&q=$q" 2>/dev/null
+          done; done
+          ScreenReader.app/Contents/MacOS/ScreenReader --run-sim shots/*.png > sim-run.tsv || true
+          python3 test/sim5/score.py sim-run.tsv | tee sim-score.txt
           rm -f ~/.config/screenreader/server
       - uses: softprops/action-gh-release@v2
         with: { tag_name: latest, name: "ScreenReader (latest build)", files: ScreenReader.zip, make_latest: true }

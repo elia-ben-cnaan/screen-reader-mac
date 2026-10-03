@@ -24,7 +24,18 @@ GUIDE = """How to solve each kind (use the unit instructions in CONTEXT when pre
 - Matrices (3x3 shapes): find the rule per row AND per column (shape, count, rotation, fill, add/subtract); the missing cell must satisfy both.
 - Odd one out / shapes: find the property all share except one (sides, symmetry, rotation, count, fill).
 - Graphs and tables: read exact values from the image, compute what is asked (difference, ratio, percent change).
-- Logic: test each option against every condition; eliminate."""
+- Logic / syllogisms: test each option against every condition; eliminate. "All A are B" does not mean all B are A.
+- Synonyms / antonyms / odd word out: find the precise shared meaning or category; prefer the closest, not a loose association.
+- Idioms and proverbs: pick the meaning, not the literal reading.
+- Quantitative comparison (A vs B): if the relation can change with allowed values, the answer is "cannot be determined".
+- Data sufficiency: decide whether each statement alone / together is enough; do not actually need the value.
+- Geometry: use the given numbers only, not how the drawing looks; recall area, angle sum, Pythagoras.
+- Clocks / calendars: count carefully (minute hand 6°/min, hour hand 0.5°/min; weekdays mod 7).
+- Codes (letters <-> numbers, substitutions): decode the given example letter by letter, then apply.
+- Cube nets / folding, rotation vs mirror, hidden figure, dominoes: reason from the image; a mirror image is never a rotation.
+- Attention / accuracy (compare strings, count symbols): compare character by character from the image, not the OCR.
+- English: vocabulary, restatement (same meaning, not just same words), reading comprehension from the text only.
+- Numbers on screen: Hebrew right-to-left text can scramble the order of numbers in OCR; trust the image for order."""
 
 PROMPT = """You assist with a multiple-choice practice simulator (Hebrew or English). Input: noisy OCR of the captured screen, sometimes an image of it, and CONTEXT = instructions of the current unit (and a reading passage) seen earlier.
 First classify the screen:

@@ -64,7 +64,7 @@ document.addEventListener('keydown', e => { if (e.key === 'ArrowLeft' || e.key =
 const t0 = Date.now();
 setInterval(() => { const s = Math.floor((Date.now() - t0) / 1000); $('timer').textContent = String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); }, 1000);
 if (autoSec) { $('auto').textContent = `מעבר אוטומטי כל ${autoSec} שניות`; setInterval(() => { if (ui < U.length) next(); }, autoSec * 1000); }
-if (p.get('unit')) qi = -1;
+if (p.get('unit')) qi = p.has('q') ? +p.get('q') : -1;   // ?unit=3&q=-1 instructions, q=0.. a question (CI screenshots)
 render();
 </script>
 </body></html>

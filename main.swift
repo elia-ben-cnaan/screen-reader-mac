@@ -65,6 +65,12 @@ func fingerprint(_ image: CGImage, w: Int = 192, h: Int = 108) -> [UInt8] {
     }
     return px
 }
+// Word-set overlap (Jaccard): re-reading the same screen gives ~1.0 even when OCR differs by a character or two.
+func similarity(_ a: String, _ b: String) -> Double {
+    let x = Set(a.split(whereSeparator: { $0.isWhitespace })), y = Set(b.split(whereSeparator: { $0.isWhitespace }))
+    if x.isEmpty && y.isEmpty { return 1 }
+    return Double(x.intersection(y).count) / Double(x.union(y).count)
+}
 func diff(_ a: [UInt8], _ b: [UInt8]) -> Double {
     guard a.count == b.count, !a.isEmpty else { return 1 }
     var n = 0; for i in 0..<a.count where abs(Int(a[i]) - Int(b[i])) > 12 { n += 1 }
@@ -348,10 +354,11 @@ func refreshWindowList() async {
     @Published var windows: [(bundleID: String, windowID: CGWindowID, name: String)] = []
     @Published var showSummary = false
     @Published var needsPermission = false
+    @Published var showList = UserDefaults.standard.bool(forKey: "showList") { didSet { UserDefaults.standard.set(showList, forKey: "showList") } }
     var hasChosenSource: Bool { UserDefaults.standard.string(forKey: "source") != nil }
     var onFloat: (() -> Void)?
     var picker: RegionPicker?
-    private var timer: Timer?, busy = false, ticks = 0, lastPrint: [UInt8] = [], lastText = "", lastImage: CGImage?, askTask: Task<Void, Never>?
+    private var timer: Timer?, busy = false, ticks = 0, lastPrint: [UInt8] = [], lastText = "", lastImage: CGImage?
 
     init() {
         if let d = try? Data(contentsOf: sessionURL), let s = try? JSONDecoder().decode(Session.self, from: d), s.end == nil, !s.units.isEmpty {
@@ -369,7 +376,7 @@ func refreshWindowList() async {
     }
     // Reset: archive whatever exists, clear the screen, ready for a new session.
     func newSession() {
-        timer?.invalidate(); timer = nil; askTask?.cancel(); thinking = false
+        timer?.invalidate(); timer = nil; thinking = false
         if session?.end == nil { session?.end = Date() }
         archive(); session = nil; current = nil; instructions = nil; status = ""; phase = .idle
         try? FileManager.default.removeItem(at: sessionURL); answerCache.removeAll(); lastPrint = []; lastText = ""
@@ -398,14 +405,14 @@ func refreshWindowList() async {
         timer?.tolerance = 0.3
     }
     func finish() {
-        timer?.invalidate(); timer = nil; askTask?.cancel(); thinking = false
+        timer?.invalidate(); timer = nil; thinking = false
         session?.end = Date(); save(); archive(); phase = .idle; status = ""
         if session?.units.isEmpty == false { showSummary = true }
     }
     // ⌥⌘P
     func pauseResume() {
         switch phase {
-        case .running: timer?.invalidate(); timer = nil; askTask?.cancel(); thinking = false; phase = .paused; status = "מושהה"
+        case .running: timer?.invalidate(); timer = nil; thinking = false; phase = .paused; status = "מושהה"
         case .paused: start()
         case .idle: start()
         }
@@ -430,7 +437,8 @@ func refreshWindowList() async {
                 lastPrint = fp; lastImage = img
                 let text = try await Task.detached(priority: .utility) { normalize(try ocr(img)) }.value
                 let stable = text.replacingOccurrences(of: #"\b\d{1,2}:\d{2}(:\d{2})?\b"#, with: "", options: .regularExpression)
-                if stable != lastText, !text.isEmpty { lastText = stable; handle(img, text) }   // clock ticking != new screen
+                // clock ticking or OCR noise on the same screen != new screen
+                if !text.isEmpty, similarity(stable, lastText) < 0.9 { lastText = stable; handle(img, text) }
             } catch {
                 status = error.localizedDescription      // e.g. chosen window closed; keep trying
             }
@@ -442,32 +450,43 @@ func refreshWindowList() async {
         return "Unit \(u.num) \(u.title): \(u.summary)" + (u.passage.isEmpty ? "" : "\nREADING PASSAGE:\n\(u.passage)")
     }
 
+    // Every screen gets its answer, even if you already moved on: requests run in parallel and are
+    // filed strictly in screen order, so a late answer lands in its own unit/question.
+    private var seq = 0, nextApply = 1, done: [Int: (Reply, String, Int, String)?] = [:]
+    @Published var inflight = 0
     func handle(_ img: CGImage, _ text: String, replace: Bool = false) {
-        askTask?.cancel()
-        let ctx = context(), visual = unit?.visual ?? false
+        seq += 1; let my = seq
+        let ctx = context()
         let t0 = Date()
         pending = text.split(whereSeparator: \.isNewline).prefix(2).joined(separator: " ")
-        thinking = true; status = "חושב…"
-        askTask = Task {
+        thinking = true; status = "חושב…"; inflight += 1
+        Task {
             let r = try? await Task.detached {
-                try await explain(img, text, context: ctx, visualUnit: visual) { p in
-                    if Reply(p).checking { Task { @MainActor in self.status = "בודק שוב…" } }
+                try await explain(img, text, context: ctx, visualUnit: true) { p in
+                    if Reply(p).checking { Task { @MainActor in if my == self.seq { self.status = "בודק שוב…" } } }
                 }
             }.value
-            guard !Task.isCancelled else { return }
-            thinking = false
-            guard let r else { status = "אין חיבור לשרת"; return }
-            apply(Reply(r.answer), raw: r.answer, ms: Int(Date().timeIntervalSince(t0) * 1000), replace: replace)
+            inflight -= 1
+            done[my] = r.map { (Reply($0.answer), $0.answer, Int(Date().timeIntervalSince(t0) * 1000), text) } ?? nil
+            if r == nil, my == seq { status = "אין חיבור לשרת" }
+            while let entry = done[nextApply] {
+                done[nextApply] = nil
+                if let (rep, raw, ms, txt) = entry { apply(rep, raw: raw, ms: ms, replace: replace, latest: nextApply == seq, text: txt) }
+                nextApply += 1
+            }
+            if nextApply > seq { thinking = false }
         }
     }
 
-    func apply(_ r: Reply, raw: String, ms: Int, replace: Bool) {
+    func apply(_ r: Reply, raw: String, ms: Int, replace: Bool, latest: Bool = true, text: String = "") {
         if session == nil { session = Session() }
         switch r.kind {
         case "instructions":
             if r["PASSAGE"].lowercased() == "yes", !session!.units.isEmpty {
-                session!.units[session!.units.count - 1].passage = String((unit!.passage + "\n" + lastText).suffix(6000))
-                status = "קטע קריאה נשמר"
+                session!.units[session!.units.count - 1].passage = String((unit!.passage + "\n" + text).suffix(6000))
+                if latest { status = "קטע קריאה נשמר" }
+            } else if let u = unit, (!r["NUM"].isEmpty && r["NUM"] == u.num) || (!r["UNIT"].isEmpty && r["UNIT"] == u.title) {
+                if latest { instructions = u; current = nil; status = "הנחיות יחידה" }   // same unit intro read again: don't open a new unit
             } else {
                 let u = Unit(title: r["UNIT"].isEmpty ? "יחידה" : r["UNIT"], num: r["NUM"], summary: r["SUMMARY"], visual: r["VISUAL"].lowercased() == "yes")
                 session!.units.append(u); instructions = u; current = nil; status = "הנחיות יחידה"
@@ -479,11 +498,11 @@ func refreshWindowList() async {
             if let i = session!.units[ui].items.firstIndex(where: { $0.question == it.question || (!it.num.isEmpty && $0.num == it.num) }) {
                 session!.units[ui].items[i] = it                         // came back to a question: update, don't duplicate
             } else { session!.units[ui].items.append(it) }
-            current = it; instructions = nil; status = ""
+            if latest { current = it; instructions = nil; status = "" }
         case "other":
-            status = "ממתין לשאלה"
+            if latest { status = "ממתין לשאלה" }
         default:
-            status = String(raw.prefix(120))                           // server message / error
+            if latest { status = String(raw.prefix(120)) }             // server message / error
         }
         save()
     }
@@ -541,10 +560,11 @@ struct MainView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                Text("ScreenReader").font(.system(size: 13, weight: .semibold))
                 if m.phase != .idle { Circle().fill(m.phase == .running ? .red : .orange).frame(width: 7, height: 7) }
+                if m.inflight > 1 { Text("+\(m.inflight - 1)").font(.system(size: 11)).foregroundStyle(.secondary).help("עונה גם על שאלות קודמות") }
                 Spacer()
                 SourceMenu(m: m)
+                Button { m.showList.toggle() } label: { Image(systemName: "sidebar.right") }.help("רשימת השאלות (⌥⌘L)")
                 Button { m.newSession() } label: { Image(systemName: "arrow.counterclockwise") }.help("סשן חדש: איפוס (הקודם נשמר)")
                 Button { m.onFloat?() } label: { Image(systemName: "pip.enter") }.help("חלון צף (⌥⌘M)")
                 Button { m.startStop() } label: {
@@ -557,12 +577,11 @@ struct MainView: View {
             .padding(.horizontal, 14).padding(.vertical, 10)
             Divider()
             HStack(spacing: 0) {
-                Sidebar(m: m).frame(width: 210)
-                Divider()
+                if m.showList { Sidebar(m: m).frame(width: 210); Divider() }
                 Center(m: m).frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .frame(minWidth: 560, minHeight: 360)
+        .frame(minWidth: m.showList ? 560 : 320, minHeight: 300)
         .environment(\.layoutDirection, .rightToLeft)
         .sheet(isPresented: $m.showSummary) { SummaryView(m: m) }
         .onAppear { m.loadWindows() }
@@ -781,6 +800,7 @@ nonisolated(unsafe) var hotkeyRefs: [EventHotKeyRef?] = []
             (kVK_ANSI_P, { [weak self] in self?.m.pauseResume() }),
             (kVK_ANSI_R, { [weak self] in self?.m.askAgain() }),
             (kVK_ANSI_M, { [weak self] in self?.toggleFloat() }),
+            (kVK_ANSI_L, { [weak self] in self?.m.showList.toggle() }),
         ])
         buildMenu()
         NSApp.activate(ignoringOtherApps: true)
@@ -879,6 +899,24 @@ if args.count >= 3, args[1] == "--explain" {   // full Practice pipeline on an i
     let text = normalize((try? ocr(img)) ?? "")
     let sem = DispatchSemaphore(value: 0)
     Task { let r = try? await explain(img, text); print("[\(r?.mode ?? "?")\(r?.cached == true ? " cached" : "")]\n\(r?.answer ?? "failed")"); sem.signal() }
+    sem.wait(); exit(0)
+}
+if args.count >= 3, args[1] == "--run-sim" {
+    // Feed screenshots in order (instructions + questions) through OCR -> server with unit context, like the app.
+    // Prints "<file> KIND ANSWER" per screen; test/sim5/score.py compares with key.json.
+    let sem = DispatchSemaphore(value: 0)
+    Task {
+        var ctx = ""
+        for path in args[2...] {
+            let img = loadImage(path), text = normalize((try? ocr(img)) ?? "")
+            let r = try? await explain(img, text, context: ctx, visualUnit: true)
+            let rep = Reply(r?.answer ?? "")
+            if rep.kind == "instructions" { ctx = "Unit \(rep["NUM"]) \(rep["UNIT"]): \(rep["SUMMARY"])" }
+            print("\((path as NSString).lastPathComponent)\t\(rep.kind.isEmpty ? "error" : rep.kind)\t\(rep["ANSWER"])\t\(rep["CONF"])")
+            fflush(stdout)
+        }
+        sem.signal()
+    }
     sem.wait(); exit(0)
 }
 if args.count >= 3, args[1] == "--selftest" {
