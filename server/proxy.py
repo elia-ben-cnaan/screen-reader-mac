@@ -31,7 +31,7 @@ First classify the screen:
 - INSTRUCTIONS: a unit/section intro explaining the question type or rules (no answer options to choose).
 - QUESTION: one active question with answer options.
 - OTHER: anything else (menu, loading, score, unrelated app).
-Reply with these lines only, in the screen's language, no extra text:
+Reply with these lines only, no extra text. Write every value (Q, A, WHY, UNIT, SUMMARY) in the same language as the question on screen:
 For QUESTION:
 ANSWER: <option label exactly as on screen, e.g. א/ב/ג/ד or 1/2/3/4>
 KIND: question
@@ -65,7 +65,7 @@ def gemini(key, model, text, image, context, strong=False):
     if image:
         parts.append({"inline_data": {"mime_type": "image/png", "data": image}})
     parts.append({"text": (f"CONTEXT:\n{context}\n\n" if context else "") + "SCREEN OCR:\n" + text})
-    gen = {"maxOutputTokens": 400 if not strong else 4000}
+    gen = {"maxOutputTokens": 2500 if not strong else 6000}
     if not strong:
         gen["thinkingConfig"] = {"thinkingBudget": 1024}
     body = {"system_instruction": {"parts": [{"text": PROMPT}]},
