@@ -265,7 +265,7 @@ func parseReply(_ s: String) -> (label: String?, q: String?, a: String?) {
         question.font = .systemFont(ofSize: 15); question.maximumNumberOfLines = 3
         question.lineBreakMode = .byTruncatingTail; question.preferredMaxLayoutWidth = 312
         answer.font = .systemFont(ofSize: 34, weight: .bold)
-        answer.lineBreakMode = .byTruncatingTail; answer.minimumScaleFactor = 0.5; answer.allowsDefaultTighteningForTruncation = true
+        answer.lineBreakMode = .byTruncatingTail; answer.allowsDefaultTighteningForTruncation = true
         label.font = .systemFont(ofSize: 14, weight: .semibold); label.textColor = .systemBlue
         for f in [status, onScreen, question, answer, label] { f.alignment = .right; f.baseWritingDirection = .rightToLeft }
 
