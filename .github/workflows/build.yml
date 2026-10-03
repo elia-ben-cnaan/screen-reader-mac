@@ -17,7 +17,8 @@ jobs:
             "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --disable-gpu --window-size=1000,1100 --screenshot="$PWD/$f.png" "file://$PWD/test/$f.html" 2>/dev/null || true
           done
           ls q-*.png && ScreenReader.app/Contents/MacOS/ScreenReader --layout q-*.png || echo "skipped"
-      - name: End-to-end (OCR on Mac -> server -> answer)
+      - name: End-to-end (OCR on Mac -> server -> answer)   # uses model quota: run manually (Actions -> build -> Run workflow)
+        if: github.event_name == 'workflow_dispatch'
         env: { SR_SERVER: "${{ secrets.SR_SERVER }}", SR_TOKEN: "${{ secrets.SR_TOKEN }}" }
         run: |
           brew install tesseract tesseract-lang >/dev/null 2>&1 || true

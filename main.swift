@@ -461,11 +461,18 @@ func refreshWindowList() async {
         pending = text.split(whereSeparator: \.isNewline).prefix(2).joined(separator: " ")
         thinking = true; status = "חושב…"; inflight += 1
         Task {
-            let r = try? await Task.detached {
-                try await explain(img, text, context: ctx, visualUnit: true) { p in
-                    if Reply(p).checking { Task { @MainActor in if my == self.seq { self.status = "בודק שוב…" } } }
-                }
-            }.value
+            // Busy/quota/network: retry up to 3 times (2s, 5s, 10s) before giving up on this screen.
+            var r: (mode: String, answer: String, cached: Bool)?
+            for (n, wait) in [0, 2, 5, 10].enumerated() {
+                if wait > 0 { if my == seq { status = "השרת עמוס · מנסה שוב (\(n)/3)" }; try? await Task.sleep(for: .seconds(wait)) }
+                r = try? await Task.detached {
+                    try await explain(img, text, context: ctx, visualUnit: true) { p in
+                        if Reply(p).checking { Task { @MainActor in if my == self.seq { self.status = "בודק שוב…" } } }
+                    }
+                }.value
+                if let a = r?.answer, !Reply(a).kind.isEmpty { break }
+                answerCache.removeAll(); r = nil
+            }
             inflight -= 1
             done[my] = r.map { (Reply($0.answer), $0.answer, Int(Date().timeIntervalSince(t0) * 1000), text) } ?? nil
             if r == nil, my == seq { status = "אין חיבור לשרת" }
@@ -671,6 +678,7 @@ struct Empty: View {
     }
 }
 
+// Floating card and the narrow main window show the same thing: where we are, the answer, the option.
 struct MiniView: View {
     @ObservedObject var m: Model
     var onExpand: () -> Void
