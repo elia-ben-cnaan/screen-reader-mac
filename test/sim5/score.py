@@ -10,7 +10,7 @@ words = lambda s: {w.strip("?,.") for w in s.split() if len(w.strip("?,.")) >= 4
 obj = dict(ok=0, tot=0, lost=0); instr = [0, 0]; fails = {}; sr = dict(ok=0, tot=0); lat = []
 fm = dict(ok=0, tot=0)
 def fnorm(fmt, a):
-    a = re.sub(r"\s+", "", a).replace("<-", "←").replace("->", "→").strip(".")
+    a = re.sub(r"\s+", "", a).replace("<-", "←").replace("->", "←").replace("→", "←").strip(".")   # same separators as proxy tidy()
     if fmt == "multi": return "+".join(sorted(x for x in re.split(r"[+,&]", a) if x))
     if fmt == "order": return "←".join(x for x in re.split(r"[←,]", a) if x)
     return a
