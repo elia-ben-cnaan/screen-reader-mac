@@ -38,15 +38,19 @@ GUIDE = """How to solve each kind (use the unit instructions in CONTEXT when pre
 - Attention / accuracy (compare strings, count symbols): compare character by character from the image, not the OCR.
 - English: vocabulary, restatement (same meaning, not just same words), reading comprehension from the text only.
 - True / False / Cannot tell (נכון / לא נכון / לא ניתן לדעת) on a short set of rules + facts: treat the given rules
-  as the COMPLETE procedure ("על סמך הכתוב/הנוהל בלבד"). Method: (1) write each rule as "IF condition THEN result";
-  (2) compute every condition from the facts exactly (compare amounts to thresholds, subtract minutes from departure
-  times, check every listed exception such as urgent/critical cases); (3) decide:
+  as the COMPLETE procedure ("על סמך הכתוב/הנוהל בלבד"): the listed rules are the only source of any obligation,
+  so if no rule is triggered by the facts, the obligation did not exist (that is לא נכון, not לא ניתן לדעת). Method: (1) write each rule as "IF condition THEN result";
+  (2) compute every condition from the facts exactly (compare amounts to thresholds — "עולה על X" is strictly more
+  than X, subtract minutes from departure times, count days from the given dates); a rule for a special case
+  (urgent/critical, new account, club member) overrides the general rule whenever that case applies; (3) decide:
   נכון = the claim follows necessarily. לא נכון = the rules+facts contradict the claim — including "X was required"
   when no rule that requires X applies (every triggering condition is false), and a general claim that a listed
   exception or a fact violates. לא ניתן לדעת = only when the claim depends on something the text never states.
   Traps: "only if A" does not mean A alone is enough; a rule "no B -> returned" does not mean every return is because
   of no B (other rules may cause it), and a rejection never tells you which other documents were included.
-  Do not answer לא ניתן לדעת just because a value must be calculated — calculate it.
+  Do not answer לא ניתן לדעת just because a value must be calculated — calculate it. When the claim states a number
+  (a fine, a sum, a time), compute the number from the rules and compare: equal -> נכון, different -> לא נכון; the
+  ANSWER must match the result of your own calculation in WHY.
 - Numbers on screen: Hebrew right-to-left text can scramble the order of numbers in OCR; trust the image for order."""
 
 PROMPT = """You assist with a multiple-choice practice simulator (Hebrew or English). Input: noisy OCR of the captured screen, sometimes an image of it, and CONTEXT = instructions of the current unit (and a reading passage) seen earlier.
@@ -121,12 +125,16 @@ def gemini(key, model, text, image, context, strong=False):
 
 
 LABELS = "אבגדהABCDE12345"
+# A choice label is one Hebrew/Latin letter or a 1-2 digit number, alone or followed by a separator ("ב", "ב.", "ב (48)", "12").
+LABEL_RE = re.compile(r"^([א-ת]|[A-Ea-e]|\d{1,2})(?=$|[\s.)\]:—–'׳\"״-])")
 def tidy(out):
     """Models sometimes drop the ANSWER line or write 'ב.' — normalise so the app always gets a clean label."""
     lines = [l.strip().replace("**", "") for l in out.splitlines() if l.strip()]
     f = {l.split(":", 1)[0].strip().upper(): l.split(":", 1)[1].strip() for l in lines if ":" in l}
     if f.get("KIND", "").lower() != "question":
         return "\n".join(lines)   # instructions / self_report / other pass through
+    f["KIND"] = "question"
+    if "CONF" in f: f["CONF"] = f["CONF"].lower()   # the re-check below keys on "CONF: low" exactly
     fmt = f.get("FORMAT", "").strip().lower()
     if fmt in ("typed", "order", "multi"):
         f["FORMAT"] = fmt
@@ -144,7 +152,8 @@ def tidy(out):
     lab = f.get("ANSWER", "").strip(" .)(")
     if not lab and f.get("A", "")[:1] in LABELS and f.get("A", "")[1:2] in (".", ")", " ", ""):
         lab = f["A"][0]; f["A"] = f["A"][1:].strip(" .)")
-    f["ANSWER"] = lab[:1] if lab[:1] in LABELS else lab
+    m = LABEL_RE.match(lab)   # "ב (48)" -> "ב"; "42" without a FORMAT line stays "42", not "4"
+    f["ANSWER"] = m[1].upper() if m else lab
     order = ["ANSWER", "FORMAT", "KIND", "NUM", "Q", "A", "WHY", "CONF", "TRAP"]
     return "\n".join(f"{k}: {f[k]}" for k in order if k in f)
 
@@ -156,7 +165,9 @@ def missing_qualifiers(out):
     if f.get("KIND", "").lower() != "self_report":
         return []
     q = [w.strip() for w in f.get("QUALIFIERS", "").split("|") if w.strip() in MUST_KEEP]
-    return [w for w in q if w not in f.get("PLAIN", "")]
+    plain = f.get("PLAIN", "")
+    # whole word (a one-letter prefix like ש/ו/ב is fine), not a substring: "רק" inside "מרקד" does not count
+    return [w for w in q if not re.search(rf"(?<![א-ת])[א-ת]?{re.escape(w)}(?![א-ת])", plain)]
 
 
 def first_ok(key, models, *a, **kw):
@@ -164,6 +175,8 @@ def first_ok(key, models, *a, **kw):
     err = ""
     for m in models:
         if blocked.get(m, 0) > time.time():
+            if not err:   # every model may be over quota: say so instead of returning an empty body
+                err = f"Model error 429: all models over quota, retry in {int(min(blocked[x] for x in models if x in blocked) - time.time()) + 1}s"
             continue
         try:
             out = tidy(gemini(key, m, *a, **kw))
@@ -207,6 +220,8 @@ class H(BaseHTTPRequestHandler):
         try:
             q = json.loads(self.rfile.read(int(self.headers.get("content-length", 0))))
         except ValueError:
+            return self.reply(400, "bad json")
+        if not isinstance(q, dict):
             return self.reply(400, "bad json")
         args = (q.get("text", ""), q.get("image"), q.get("context", ""))
         self.send_response(200)
