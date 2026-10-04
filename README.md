@@ -4,7 +4,7 @@ Small floating window that passively reads on-screen text (Hebrew + English) usi
 **Run:** `./run.sh` (first time builds; needs `xcode-select --install`). Press **Start**.
 First start asks for Screen Recording: System Settings → Privacy & Security → Screen & System Audio Recording → enable **ScreenReader**, quit and reopen.
 
-**Test:** `./test/run-tests.sh`
+**Test:** `./test/run-tests.sh` (OCR + layout, Mac). Server-side regression without a Mac: `python3 test/real/run_cases.py <port>` replays 65 OCR-text screens (`test/real/adversarial.json`: rules true/false/cannot-tell, word problems, sequences, analogies, typed/order/multi formats, instructions, non-question screens, self-report negation) and scores them by type; `python3 test/real/run_rules.py <port>` replays the 6 real-simulator rule questions.
 
 ## Architecture
 Timer every 1.5 s → ScreenCaptureKit screenshot of the main display (in memory, own window excluded) → 64×36 grayscale fingerprint → if unchanged, skip → else Vision OCR (`he-IL`,`en-US`, accurate) → whitespace normalize → update window only if text differs.
