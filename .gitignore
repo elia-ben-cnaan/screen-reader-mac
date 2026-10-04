@@ -2,3 +2,4 @@ Config.swift
 ScreenReader.app/
 *.zip
 .claude/
+__pycache__/
