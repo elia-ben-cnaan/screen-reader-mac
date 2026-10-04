@@ -68,7 +68,7 @@ def check(c, out):
     elif typ == "self_report":
         if kind != "self_report": return [f"kind={kind or '?'}"]
         plain = f.get("PLAIN", ""); opts = [o.strip() for o in f.get("OPTIONS", "").split("|") if o.strip()]
-        strip = lambda xs: [re.sub(r"^([א-ת]|[A-Ea-e]|\d)[.)]\s+", "", o) for o in xs]   # "א. אדווח" == "אדווח"
+        strip = lambda xs: [re.sub(r"\s*=.*$", "", re.sub(r"^([א-ת]|[A-Ea-e]|\d)[.)]\s+", "", o)) for o in xs]   # "א. אדווח" == "אדווח"; "1 = כלל לא מסכים" == "1"
         if strip(opts) != strip(c["options"]): bad.append(f"options {opts} != {c['options']}")
         if not plain: bad.append("PLAIN missing")
         if "לא נכון לומר" in plain: bad.append(f"double negation kept: {plain}")
