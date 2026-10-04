@@ -522,26 +522,23 @@ func refreshWindowList() async {
                 windows = visibleWindows
                 let fp = fingerprint(img)
                 ticks += 1
-                // Page-based change detection. Locked on the answered screen until the PAGE changes:
-                // - small changes (mouse, hover, a selected option, a timer) are ignored completely;
-                // - wait until the screen stops moving, then read it once;
-                // - a new question = a large part of the screen changed, or the question number changed.
+                // Change detection: pixels only TRIGGER a check (any change, plus every few ticks as a safety net);
+                // the TEXT decides. New question = a large part of the text changed or the question number changed.
+                // Mouse / hover / selecting an option change pixels but not the text -> nothing happens (no jitter).
                 let moving = diff(fp, prevPrint) > 0.004
                 prevPrint = fp
                 if moving { return }                                   // page still loading / animating
-                let change = diff(fp, answeredPrint)
-                if change < 0.012 { return }                            // same page: stay locked, no re-read
-                if change < 0.06 && diff(fp, checkedPrint) < 0.004 { return }   // this in-between state was already checked
+                if diff(fp, checkedPrint) < 0.002 && ticks % 4 != 0 { return }   // nothing new on screen since the last read
                 checkedPrint = fp; lastImage = img
                 let to = Date()
                 let text = try await Task.detached(priority: .utility) { normalize(try ocr(img)) }.value
                 ocrMs = Int(Date().timeIntervalSince(to) * 1000)
                 if text.isEmpty { return }
+                let stable = text.replacingOccurrences(of: #"\b\d{1,2}:\d{2}(:\d{2})?\b"#, with: "", options: .regularExpression)
                 let num = questionNumber(text)
-                let newPage = change >= 0.06 || (num != nil && num != answeredNum)
-                if newPage {
-                    answeredPrint = fp; answeredNum = num
-                    lastText = text; lastRaw = text; handle(img, text)
+                let numberMoved = num != nil && answeredNum != nil && num != answeredNum
+                if numberMoved || similarity(stable, lastText) < 0.85 {
+                    answeredNum = num; lastText = stable; lastRaw = text; handle(img, text)
                 }
             } catch {
                 status = error.localizedDescription; failed = true; capFail = true      // e.g. chosen window closed; keep trying
