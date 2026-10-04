@@ -250,7 +250,7 @@ def self_report_fix(out):
 
 PUNCT = ".,?!:;\"'׳״()[]־-–—"
 def mark_same(out, screen):
-    """SELF_REPORT: add "SAME: yes" when PLAIN is (almost) the statement as written on screen, so the app does not
+    """SELF_REPORT: add "SAME: yes" when PLAIN is the statement as written on screen (same words, same order), so the app does not
     make the reader read the same sentence twice. Word-level match against the OCR text; no model call."""
     f = {l.split(":", 1)[0].strip().upper(): l.split(":", 1)[1].strip() for l in out.splitlines() if ":" in l}
     if f.get("KIND", "").lower() != "self_report" or not f.get("PLAIN") or not screen:
@@ -263,7 +263,7 @@ def mark_same(out, screen):
     if p and blocks:
         matched = sum(b.size for b in blocks)
         span = blocks[-1].b + blocks[-1].size - blocks[0].b      # the matched words must sit together on screen
-        same = matched >= 0.9 * len(p) and span <= len(p) + max(2, len(p) // 5)
+        same = matched == len(p) and span <= len(p) + 1   # every word, in order, with at most one extra word between them
     return out + f"\nSAME: {'yes' if same else 'no'}"
 
 
