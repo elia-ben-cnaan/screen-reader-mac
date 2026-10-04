@@ -42,7 +42,8 @@ jobs:
           mkdir -p shots
           for u in 1 2 3 4 5 6 7; do last=$(python3 -c "import json;k=json.load(open('test/sim5/key.json'))[$u-1];print(len(k.get('answers') or k.get('items') or k.get('formats'))-1)"); for q in $(seq -1 $last); do
             n=$(printf "u%d_q%02d.png" $u $((q+1)))
-            perl -e 'alarm 30; exec @ARGV' "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --disable-gpu --hide-scrollbars --window-size=1000,900 --screenshot="$PWD/shots/$n" "file://$PWD/test/sim5/index.html?unit=$u&q=$q" 2>/dev/null
+            perl -e 'alarm 30; exec @ARGV' "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --disable-gpu --hide-scrollbars --window-size=1000,900 --screenshot="$PWD/shots/$n" "file://$PWD/test/sim5/index.html?unit=$u&q=$q" 2>/dev/null \
+              || { echo "screenshot $n timed out, retrying"; perl -e 'alarm 30; exec @ARGV' "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --disable-gpu --hide-scrollbars --window-size=1000,900 --screenshot="$PWD/shots/$n" "file://$PWD/test/sim5/index.html?unit=$u&q=$q" 2>/dev/null || echo "screenshot $n failed twice, skipped"; }   # headless Chrome sometimes hangs on the runner: one stuck screenshot must not abort the run
           done; done
           echo "screens: $(ls shots | wc -l)"
           ScreenReader.app/Contents/MacOS/ScreenReader --run-sim shots/*.png | tee sim-run.tsv | awk 'NR%25==0{print "progress", NR; fflush()}' || true
