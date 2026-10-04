@@ -18,7 +18,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build
-        env: { SR_SERVER: "${{ secrets.SR_SERVER }}", SR_TOKEN: "${{ secrets.SR_TOKEN }}" }
+        # the token is NOT baked into the public download; the Mac reads it from ~/.config/screenreader/server
+        env: { SR_SERVER: "${{ secrets.SR_SERVER }}" }
         run: ./build.sh && ditto -c -k --keepParent ScreenReader.app ScreenReader.zip
       - name: Layout self-test (no screen, no network)
         run: |
