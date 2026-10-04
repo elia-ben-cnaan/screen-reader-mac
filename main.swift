@@ -87,6 +87,15 @@ func timesMoved(_ old: String, _ new: String) -> Bool {
     if a.count != b.count { return !old.isEmpty }
     return zip(a, b).contains { abs($0 - $1) > 10 }
 }
+// "שאלה 3", "3/8", "3 מתוך 20" -> 3 (the clearest sign that the simulator moved to another question)
+func questionNumber(_ s: String) -> Int? {
+    for p in [#"שאלה\s*(\d{1,3})"#, #"(\d{1,3})\s*מתוך\s*\d{1,3}"#, #"\b(\d{1,3})\s*/\s*\d{1,3}\b"#] {
+        if let r = s.range(of: p, options: .regularExpression) {
+            let m = String(s[r]); if let d = m.range(of: #"\d{1,3}"#, options: .regularExpression) { return Int(m[d]) }
+        }
+    }
+    return nil
+}
 func diff(_ a: [UInt8], _ b: [UInt8]) -> Double {
     guard a.count == b.count, !a.isEmpty else { return 1 }
     var n = 0; for i in 0..<a.count where abs(Int(a[i]) - Int(b[i])) > 12 { n += 1 }
@@ -379,7 +388,7 @@ func refreshWindowList() async {
     @Published var current: Item?
     @Published var instructions: Unit?          // last screen was a unit intro
     // SELF_REPORT screen: plain meaning + the options on screen. Shown only; never recorded, never suggests an option.
-    struct SelfReport { var plain: String; var options: [String]; var neg: Bool; var keys: [String] = []; var same = false }   // keys = words of plain shown in bold; same = plain is the statement as written
+    struct SelfReport { var plain: String; var options: [String]; var neg: Bool; var keys: [String] = []; var same = false; var ask = "" }   // keys = words of plain shown in bold; same = plain is the statement as written
     @Published var selfReport: SelfReport?
     @Published var timing = ""                   // capture · OCR · server ms of the last screen
     @Published var status = ""                  // waiting / thinking / errors
@@ -419,7 +428,7 @@ func refreshWindowList() async {
     var hasChosenSource: Bool { UserDefaults.standard.string(forKey: "source") != nil }
     var onFloat: (() -> Void)?
     var picker: RegionPicker?
-    private var timer: Timer?, busy = false, ticks = 0, lastRaw = "", candText = "", candRaw = "", capMs = 0, ocrMs = 0, lastPrint: [UInt8] = [], lastText = "", lastImage: CGImage?
+    private var timer: Timer?, busy = false, ticks = 0, lastRaw = "", prevPrint: [UInt8] = [], answeredPrint: [UInt8] = [], checkedPrint: [UInt8] = [], answeredNum: Int? = nil, capMs = 0, ocrMs = 0, lastPrint: [UInt8] = [], lastText = "", lastImage: CGImage?
 
     init() {
         if let d = try? Data(contentsOf: sessionURL), let s = try? JSONDecoder().decode(Session.self, from: d), s.end == nil, !s.units.isEmpty {
@@ -440,12 +449,12 @@ func refreshWindowList() async {
         timer?.invalidate(); timer = nil; thinking = false
         if session?.end == nil { session?.end = Date() }
         archive(); session = nil; current = nil; instructions = nil; status = ""; phase = .idle
-        try? FileManager.default.removeItem(at: sessionURL); answerCache.removeAll(); lastPrint = []; lastText = ""; lastRaw = ""
+        try? FileManager.default.removeItem(at: sessionURL); answerCache.removeAll(); lastPrint = []; lastText = ""; lastRaw = ""; answeredPrint = []; answeredNum = nil
     }
     func save() { if let s = session, let d = try? JSONEncoder().encode(s) { try? d.write(to: sessionURL) } }
 
     func loadWindows() { Task { await refreshWindowList(); windows = visibleWindows } }
-    func setSource(_ s: Source) { source = s; s.save(); sourceLabel = s.label; lastPrint = []; lastText = ""; lastRaw = "" }
+    func setSource(_ s: Source) { source = s; s.save(); sourceLabel = s.label; lastPrint = []; lastText = ""; lastRaw = ""; answeredPrint = []; answeredNum = nil }
     func pickRegion() {
         picker = RegionPicker { [weak self] r in if let r { self?.setSource(.region(r)) }; self?.picker = nil }
         picker?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
@@ -459,7 +468,7 @@ func refreshWindowList() async {
         guard CGPreflightScreenCaptureAccess() else { CGRequestScreenCaptureAccess(); needsPermission = true; return }
         needsPermission = false
         if session == nil || session?.end != nil { session = Session(); current = nil; instructions = nil }
-        phase = .running; status = "ממתין לשאלה"; lastPrint = []; lastText = ""; lastRaw = ""
+        phase = .running; status = "ממתין לשאלה"; lastPrint = []; lastText = ""; lastRaw = ""; answeredPrint = []; answeredNum = nil
         tick()
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { _ in Task { @MainActor in self.tick() } }
@@ -486,7 +495,7 @@ func refreshWindowList() async {
             do {
                 let img = try await captureScreen()
                 let text = try await Task.detached(priority: .userInitiated) { normalize(try ocr(img)) }.value
-                lastPrint = fingerprint(img); lastImage = img
+                lastPrint = fingerprint(img); answeredPrint = lastPrint; answeredNum = questionNumber(text); lastImage = img
                 lastText = text.replacingOccurrences(of: #"\b\d{1,2}:\d{2}(:\d{2})?\b"#, with: "", options: .regularExpression)
                 answerCache.removeAll(); handle(img, text, replace: true)
             } catch { status = error.localizedDescription }
@@ -513,21 +522,27 @@ func refreshWindowList() async {
                 windows = visibleWindows
                 let fp = fingerprint(img)
                 ticks += 1
-                if diff(fp, lastPrint) < changeThreshold && ticks % forceEvery != 0 { return }
-                lastPrint = fp; lastImage = img
+                // Page-based change detection. Locked on the answered screen until the PAGE changes:
+                // - small changes (mouse, hover, a selected option, a timer) are ignored completely;
+                // - wait until the screen stops moving, then read it once;
+                // - a new question = a large part of the screen changed, or the question number changed.
+                let moving = diff(fp, prevPrint) > 0.004
+                prevPrint = fp
+                if moving { return }                                   // page still loading / animating
+                let change = diff(fp, answeredPrint)
+                if change < 0.012 { return }                            // same page: stay locked, no re-read
+                if change < 0.06 && diff(fp, checkedPrint) < 0.004 { return }   // this in-between state was already checked
+                checkedPrint = fp; lastImage = img
                 let to = Date()
                 let text = try await Task.detached(priority: .utility) { normalize(try ocr(img)) }.value
                 ocrMs = Int(Date().timeIntervalSince(to) * 1000)
-                let stable = text.replacingOccurrences(of: #"\b\d{1,2}:\d{2}(:\d{2})?\b"#, with: "", options: .regularExpression)
-                // clock ticking or OCR noise on the same screen != new screen; but a question that differs only by
-                // one word or by a time in its text (16:25 -> 15:25) is new
-                // A change must be seen on two reads in a row before it counts: OCR noise and page transitions differ
-                // from read to read, a real new question stays the same.
-                if !text.isEmpty, similarity(stable, lastText) < 0.97 || timesMoved(lastRaw, text) {
-                    if similarity(stable, candText) >= 0.97 && !timesMoved(candRaw, text) {
-                        lastText = stable; lastRaw = text; candText = ""; candRaw = ""; handle(img, text)
-                    } else { candText = stable; candRaw = text; lastPrint = [] }   // re-read next tick even if pixels settle
-                } else { candText = ""; candRaw = "" }
+                if text.isEmpty { return }
+                let num = questionNumber(text)
+                let newPage = change >= 0.06 || (num != nil && num != answeredNum)
+                if newPage {
+                    answeredPrint = fp; answeredNum = num
+                    lastText = text; lastRaw = text; handle(img, text)
+                }
             } catch {
                 status = error.localizedDescription; failed = true; capFail = true      // e.g. chosen window closed; keep trying
             }
@@ -604,7 +619,7 @@ func refreshWindowList() async {
                 selfReport = SelfReport(plain: r["PLAIN"], options: r["OPTIONS"].components(separatedBy: "|").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty },
                                         neg: r["NEG"].lowercased() == "yes",
                                         keys: r["KEY"].components(separatedBy: "|").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty },
-                                        same: r["SAME"].lowercased() == "yes")
+                                        same: r["SAME"].lowercased() == "yes", ask: r["ASK"])
                 current = nil; instructions = nil; status = ""
                 say(r["PLAIN"])                                        // only when the speaker button is on
             }
@@ -795,7 +810,7 @@ struct Center: View {
 // SELF_REPORT: what the statement really asks, and the options as they appear on screen. No recommendation.
 struct SelfReportCard: View {
     let sr: Model.SelfReport; let big: Bool
-    var size: CGFloat { big ? 26 : 16 }
+    var size: CGFloat { big ? 30 : 18 }
     // The words that flip or limit the meaning (לא, בלי, תמיד, רק, קרה...) are heavier than the rest of the sentence.
     var styled: AttributedString {
         var out = AttributedString()
@@ -812,17 +827,10 @@ struct SelfReportCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: big ? 14 : 6) {
             if big { Label("שאלון אישי · אין תשובה נכונה", systemImage: "person.text.rectangle").font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary) }
-            if sr.same {   // the statement is already simple: do not make the reader read it twice
-                Text("ההיגד ברור כמו שהוא").font(.system(size: big ? 20 : 15, weight: .semibold)).foregroundStyle(.secondary)
-                if !sr.keys.isEmpty { Text(sr.keys.joined(separator: " · ")).font(.system(size: size, weight: .heavy)).fixedSize(horizontal: false, vertical: true) }
-            } else {
-                Text(styled).font(.system(size: size, weight: .regular)).lineSpacing(big ? 6 : 2).fixedSize(horizontal: false, vertical: true)
-            }
-            VStack(alignment: .leading, spacing: big ? 4 : 3) {   // the options as on screen, one per line
-                ForEach(Array(sr.options.enumerated()), id: \.offset) { _, o in
-                    Text(o).font(.system(size: big ? 14 : 12)).foregroundStyle(Color.accentColor).fixedSize(horizontal: false, vertical: true)
-                }
-            }
+            // One glance: WHAT it is about (big), HOW to answer (small), the options on one quiet line.
+            Text(styled).font(.system(size: size, weight: .semibold)).lineSpacing(big ? 6 : 2).fixedSize(horizontal: false, vertical: true)
+            if !sr.ask.isEmpty { Text(sr.ask).font(.system(size: big ? 16 : 13, weight: .medium)).foregroundStyle(.secondary) }
+            Text(sr.options.joined(separator: "  ·  ")).font(.system(size: big ? 13 : 11)).foregroundStyle(Color.accentColor).fixedSize(horizontal: false, vertical: true)
         }
     }
 }

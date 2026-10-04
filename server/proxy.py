@@ -73,6 +73,14 @@ GUIDE = """How to solve each kind (use the unit instructions in CONTEXT when pre
   Do not answer לא ניתן לדעת just because a value must be calculated — calculate it. When the claim states a number
   (a fine, a sum, a time), compute the number from the rules and compare: equal -> נכון, different -> לא נכון; the
   ANSWER must match the result of your own calculation in WHY.
+- Situational judgment (work scenarios, "מה נכון לעשות"): the best option keeps responsibility toward whoever gave the
+  task or instruction, serves the goal, and is transparent — e.g. finish or pause and bring the improvement to the
+  manager with a comparison. Weaker options: acting alone against the instruction, hiding or ignoring the issue,
+  doing nothing, delaying everything, or an extreme / escalating reaction. Prefer the balanced, proactive option.
+- Symbol / operation puzzles (a legend of symbols -> operations, then a chain of symbols): read the legend first, map each
+  symbol in the chain carefully from the IMAGE (□ empty vs ▣ filled vs ■ black are different), apply the operations one by
+  one in order and write every intermediate result in WORK (e.g. QLCW -> QQLCW -> QQLWC); the option equal to the last
+  result is the answer.
 - Numbers on screen: Hebrew right-to-left text can scramble the order of numbers in OCR; trust the image for order."""
 
 PROMPT = """You assist with a multiple-choice practice simulator (Hebrew or English). Input: noisy OCR of the captured screen, sometimes an image of it, and CONTEXT = instructions of the current unit (and a reading passage) seen earlier.
@@ -80,15 +88,15 @@ First classify the screen:
 - INSTRUCTIONS: a unit/section intro explaining the question type or rules (no answer options to choose).
 - QUESTION: one active question with answer options.
 - SELF_REPORT: a statement or question about the test-taker's OWN behavior, habits, attitudes or opinions, answered on a
-  personal scale (yes/no, true/not true for me, agreement, frequency). It has no objectively correct answer.
-  Also SELF_REPORT: "what would you do" situations (מה תעשה / כיצד תנהג / מה הכי סביר שתעשה) whose options are possible
-  behaviours, questions about the test-taker's own past (כמה פעמים איחרת...), and opinions about people in general
-  (רוב האנשים...). These have lettered options but no correct answer — never give ANSWER for them.
+  personal scale (yes/no, true/not true for me, agreement, frequency), and questions about the test-taker's own past
+  (כמה פעמים איחרת...). It has no objectively correct answer — never give ANSWER for it.
+- Situational judgment (a work scenario + "מה נכון לעשות / מה הדרך הטובה ביותר / מה עליך לעשות / מה תעשה / כיצד תנהג",
+  with options that are different actions) is a QUESTION: pick the best action and explain why in WHY.
   A question about facts, numbers, a text or given rules is a QUESTION even if worded in first person or answered כן/לא.
 - OTHER: anything else (menu, loading, score, unrelated app).
 Reply with these lines only, no extra text. Write every value (Q, A, WHY, UNIT, SUMMARY) in the same language as the question on screen:
 For QUESTION:
-WORK: <only for rules (נכון / לא נכון / לא ניתן לדעת), calculations and sequences: the computation itself, step by step, max 40 words.
+WORK: <only for rules (נכון / לא נכון / לא ניתן לדעת), calculations, sequences and symbol-operation chains: the computation itself, step by step, max 40 words.
   Finish it before you write ANSWER; ANSWER, A and WHY must state the final result of WORK, with no second thoughts. Otherwise ->
 ANSWER: <option label exactly as on screen, e.g. א/ב/ג/ד or 1/2/3/4; for FORMAT typed: the value to type (number or word);
   for FORMAT order: all labels in the correct order joined by " ← " (first ← ... ← last); for FORMAT multi: every correct label joined by " + ">
@@ -97,7 +105,7 @@ KIND: question
 NUM: <question number if visible, else ->
 Q: <the question, cleaned, max 20 words>
 A: <the answer itself, max 4 words>
-WHY: <one short line, the key step, max 12 words>
+WHY: <one short line, the key step, max 12 words; for situational judgment, max 15 words: why this action is the best>
 CONF: <high or low — low if the OCR/image is unclear or you are unsure>
 TRAP: <only if one wrong option is clearly built to lure a quick solver (partial calculation, reversed relation, misread axis, the obvious-looking pick): "<label> — <why it is tempting and wrong, max 12 words>"; otherwise ->
 For INSTRUCTIONS:
@@ -107,27 +115,19 @@ NUM: <unit number if visible, else ->
 SUMMARY: <what to do in this unit, one sentence>
 VISUAL: <yes if questions in this unit are shapes/matrices/graphs, else no>
 PASSAGE: <yes if this screen is a reading passage for following questions, else no>
-For SELF_REPORT (never suggest, rank or hint which option to choose — only clarify the meaning):
+For SELF_REPORT (never suggest, rank or hint which option to choose — only make the statement easy to grasp at a glance):
 KIND: self_report
-PLAIN: <the real meaning in very simple everyday Hebrew, as short as possible (aim for ~10 words, up to 15 when needed),
-  in the form that fits the on-screen options so the reader can answer it directly:
-  - agreement scale (מסכים / לא מסכים...) or true-for-me (נכון לגביי / לא נכון לגביי) -> a first-person STATEMENT,
-    e.g. "אני מקפיד על כללים גם בלי פיקוח" or "קרה שהצגתי מצב מחמיא מדי";
-  - frequency scale (אף פעם ... תמיד) -> "באיזו תדירות ...?";
-  - yes/no -> "האם ...?".
-  Resolve negation and double negation logically ("לא נכון לומר שמעולם לא היה מצב שבו X" -> "קרה ש..." / "יש מצבים ש...").
-  Simplify the STRUCTURE (negations, "נכון לומר ש", long or passive clauses), not the content words: reuse the statement's
-  own words whenever they are simple, and never swap a phrase for a looser one ("מעבר למה שתכננתי" is not "הרבה",
-  "מי שיש לו אינטרס בהחלטה" is not "מי שההחלטה השפיעה עליו", "באופן שאחרים יכלו לחוות כמאיים" is not "שנתפס כמאיים",
-  "טעות שהייתי מעורב בה" is not "טעות שלי"). Keep "לדעתך" / "אני מרגיש ש" / "כשנראה לי ש", and degree words (מאוד, קצת, משמעותי).
-  If the statement is already short and simple, PLAIN is the statement itself, word for word (only put it in the right form).
-  PLAIN must be one complete, grammatical Hebrew sentence — read it again before you answer.
-  A statement is always in first person (אני / קרה ש + first person), even if the original says "אתה".
-  A "האם" question speaks to the reader (אתה / לך), as the original question does.
-  Shorten only the wording, never the content: keep every condition, reason, comparison and object of the original
-  (e.g. "גם במצב לא נוח", "לצורך אישי", "במקום להציג כעובדה", "כי חשבתי שאינו חשוב", "קטן", "שאינו שלי", "בלי לבדוק אם מותר"),
-  keep "קרה ש" / "יש מצבים ש" when the original says it, and keep the person (I / you) consistent with the options. Keep every qualifier word
-  that changes meaning: לא, מעולם, אף פעם, אי פעם, תמיד, בדרך כלל, לעיתים, לפעמים, רק, ללא, בלי.>
+PLAIN: <WHAT it is about: the core content as a very short, everyday Hebrew phrase in first person, about 4-7 words
+  (up to 9 only to keep a condition or qualifier). Strip every wrapper — "באיזו תדירות", "נכון לומר ש", "עד כמה",
+  "האם", "קרה ש" belong to ASK, not here. Resolve negation and double negation to the plain positive content
+  ("לא נכון לומר שמעולם לא היה מצב שבו הקפדת על כללים" -> "הקפדתי על כללים"). Use simple words, but keep the meaning:
+  keep conditions that change it ("בלי פיקוח", "בלי רשות", "לצורך אישי", "גם במצב לא נוח", "כי חשבתי שזה לא חשוב") and
+  every qualifier word (לא, מעולם, אף פעם, תמיד, בדרך כלל, לעיתים, לפעמים, רק, ללא, בלי). No question mark.
+  Examples: "קרה שהצגתי מצב בצורה טובה יותר ממה שהיה באמת כדי להימנע מביקורת" -> "ייפיתי מצב כדי לא לקבל ביקורת";
+  "באיזו תדירות נכון לומר שאני מקפיד על כללים גם כשאף אחד אינו בודק אותי?" -> "מקפיד על כללים גם בלי פיקוח";
+  "לדעתך מתנה קטנה מלקוח אינה בעייתית" -> "מתנה קטנה מלקוח זה בסדר (לדעתי)".>
+ASK: <HOW to answer, matching the on-screen options, exactly one of: "עד כמה אתה מסכים?" (agreement scale),
+  "כמה פעמים זה קרה / קורה לך?" (frequency), "כן או לא?" (yes/no), "זה נכון לגביך?" (true / not true for me)>
 OPTIONS: <every response option visible on screen, exactly as written, in on-screen order, separated by " | ">
 NEG: <yes if the original wording contains a negation, else no>
 QUALIFIERS: <meaning-bearing words from the STATEMENT itself (not from the answer options) that must survive in PLAIN:
@@ -241,7 +241,7 @@ def self_report_fix(out):
     if UNRESOLVED.search(plain):
         return "your PLAIN still contains the double negation. Rewrite it as the positive meaning (\"קרה ש...\")."
     q = [w.strip() for w in f.get("QUALIFIERS", "").split("|") if w.strip() in MUST_KEEP]
-    if RESOLVED.search(plain):   # a resolved "מעולם לא ... לא" no longer has its מעולם / אף פעם
+    if RESOLVED.search(plain) or f.get("NEG", "").lower() == "yes":   # a resolved "מעולם לא ... לא" no longer has its מעולם / אף פעם
         q = [w for w in q if w not in ("מעולם", "אף פעם")]
     # whole word (a one-letter prefix like ש/ו/ב is fine), not a substring: "רק" inside "מרקד" does not count
     miss = [w for w in q if not re.search(rf"(?<![א-ת])[א-ת]?{re.escape(w)}(?![א-ת])", plain)]
@@ -264,7 +264,16 @@ def mark_same(out, screen):
         matched = sum(b.size for b in blocks)
         span = blocks[-1].b + blocks[-1].size - blocks[0].b      # the matched words must sit together on screen
         same = matched == len(p) and span <= len(p) + 1   # every word, in order, with at most one extra word between them
-    return out + f"\nSAME: {'yes' if same else 'no'}"
+    ask = f.get("ASK") or ask_for(f.get("OPTIONS", "") or screen)
+    return out + f"\nSAME: {'yes' if same else 'no'}" + ("" if f.get("ASK") else f"\nASK: {ask}")
+
+
+def ask_for(opts):
+    """SELF_REPORT: the short "how to answer" line, derived from the answer options (no model call)."""
+    if "מסכים" in opts: return "עד כמה אתה מסכים?"
+    if "נכון לגבי" in opts: return "זה נכון לגביך?"
+    if any(w in opts for w in ("אף פעם", "לעיתים", "לפעמים", "תמיד")): return "כמה פעמים זה קרה / קורה לך?"
+    return "כן או לא?"
 
 
 def first_ok(key, models, *a, **kw):
