@@ -5,10 +5,11 @@ import SwiftUI
 import Carbon.HIToolbox
 import Vision
 import ScreenCaptureKit
+import AVFoundation
 
-let interval: TimeInterval = 1.5          // seconds between capture checks
+let interval: TimeInterval = 1.0          // seconds between capture checks (the check is local and cheap)
 let changeThreshold: Double = 0.0015      // share of fingerprint cells that changed visibly = "new screen"
-let forceEvery = 4                         // re-OCR every Nth tick anyway (safety net, OCR is local)
+let forceEvery = 6                         // re-OCR every Nth tick anyway (safety net, OCR is local)
 
 // MARK: OCR (shared by app + --selftest)
 let tesseractPath = ["/opt/homebrew/bin/tesseract", "/usr/local/bin/tesseract"].first { FileManager.default.isExecutableFile(atPath: $0) }
@@ -378,7 +379,7 @@ func refreshWindowList() async {
     @Published var current: Item?
     @Published var instructions: Unit?          // last screen was a unit intro
     // SELF_REPORT screen: plain meaning + the options on screen. Shown only; never recorded, never suggests an option.
-    struct SelfReport { var plain: String; var options: [String]; var neg: Bool; var keys: [String] = [] }   // keys = words of plain shown in bold
+    struct SelfReport { var plain: String; var options: [String]; var neg: Bool; var keys: [String] = []; var same = false }   // keys = words of plain shown in bold; same = plain is the statement as written
     @Published var selfReport: SelfReport?
     @Published var timing = ""                   // capture · OCR · server ms of the last screen
     @Published var status = ""                  // waiting / thinking / errors
@@ -389,6 +390,32 @@ func refreshWindowList() async {
     @Published var showSummary = false
     @Published var needsPermission = false
     @Published var showList = UserDefaults.standard.bool(forKey: "showList") { didSet { UserDefaults.standard.set(showList, forKey: "showList") } }
+    // Technical line (capture / OCR / server ms): hidden unless switched on from the menu.
+    @Published var showTech = UserDefaults.standard.bool(forKey: "showTech") { didSet { UserDefaults.standard.set(showTech, forKey: "showTech") } }
+    // Read the plain meaning of a SELF_REPORT statement aloud (local macOS voice, no network). Off = never speaks.
+    @Published var speak = UserDefaults.standard.bool(forKey: "speak") {
+        didSet {
+            UserDefaults.standard.set(speak, forKey: "speak")
+            if speak, let sr = selfReport { say(sr.plain) } else { _ = synth.stopSpeaking(at: .immediate) }
+        }
+    }
+    private let synth = AVSpeechSynthesizer()
+    func say(_ s: String) {
+        _ = synth.stopSpeaking(at: .immediate)
+        guard speak, !s.isEmpty else { return }
+        let u = AVSpeechUtterance(string: s)
+        u.voice = AVSpeechSynthesisVoice(language: "he-IL")
+        u.rate = AVSpeechUtteranceDefaultSpeechRate * 0.9
+        synth.speak(u)
+    }
+    // Something went wrong (no server, credit, window closed): the cards show a red strip. Orange = re-checking / retrying.
+    @Published var failed = false
+    private var capFail = false
+    var strip: Color? {
+        if failed && !status.isEmpty { return Color.red }
+        if status.hasPrefix("בודק שוב") || status.hasPrefix("השרת עמוס") { return Color.orange }
+        return nil
+    }
     var hasChosenSource: Bool { UserDefaults.standard.string(forKey: "source") != nil }
     var onFloat: (() -> Void)?
     var picker: RegionPicker?
@@ -436,7 +463,7 @@ func refreshWindowList() async {
         tick()
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { _ in Task { @MainActor in self.tick() } }
-        timer?.tolerance = 0.3
+        timer?.tolerance = 0.2
     }
     func finish() {
         timer?.invalidate(); timer = nil; thinking = false
@@ -482,6 +509,7 @@ func refreshWindowList() async {
                 let tc = Date()
                 let img = try await captureScreen()
                 capMs = Int(Date().timeIntervalSince(tc) * 1000)
+                if capFail { capFail = false; failed = false; status = "ממתין לשאלה" }   // the window is back
                 windows = visibleWindows
                 let fp = fingerprint(img)
                 ticks += 1
@@ -497,7 +525,7 @@ func refreshWindowList() async {
                     lastText = stable; lastRaw = text; handle(img, text)
                 }
             } catch {
-                status = error.localizedDescription      // e.g. chosen window closed; keep trying
+                status = error.localizedDescription; failed = true; capFail = true      // e.g. chosen window closed; keep trying
             }
         }
     }
@@ -516,7 +544,8 @@ func refreshWindowList() async {
         let ctx = context()
         let t0 = Date()
         pending = text.split(whereSeparator: \.isNewline).prefix(2).joined(separator: " ")
-        thinking = true; status = "חושב…"; inflight += 1
+        thinking = true; status = "חושב…"; inflight += 1; failed = false
+        _ = synth.stopSpeaking(at: .immediate)                    // a new screen: stop reading the previous statement
         Task {
             // Busy/quota/network: retry up to 3 times (2s, 5s, 10s) before giving up on this screen.
             var r: (mode: String, answer: String, cached: Bool)?
@@ -532,7 +561,7 @@ func refreshWindowList() async {
             }
             inflight -= 1
             done[my] = r.map { (Reply($0.answer), $0.answer, Int(Date().timeIntervalSince(t0) * 1000), text) } ?? nil
-            if r == nil, my == seq { status = "אין חיבור לשרת · ⌥⌘R לניסיון נוסף"; current = nil; selfReport = nil }
+            if r == nil, my == seq { status = "אין חיבור לשרת · ⌥⌘R לניסיון נוסף"; current = nil; selfReport = nil; failed = true }
             while let entry = done[nextApply] {
                 done[nextApply] = nil
                 if let (rep, raw, ms, txt) = entry {
@@ -570,15 +599,17 @@ func refreshWindowList() async {
             if latest {
                 selfReport = SelfReport(plain: r["PLAIN"], options: r["OPTIONS"].components(separatedBy: "|").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty },
                                         neg: r["NEG"].lowercased() == "yes",
-                                        keys: r["KEY"].components(separatedBy: "|").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })
+                                        keys: r["KEY"].components(separatedBy: "|").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty },
+                                        same: r["SAME"].lowercased() == "yes")
                 current = nil; instructions = nil; status = ""
+                say(r["PLAIN"])                                        // only when the speaker button is on
             }
         case "other":
             if latest { status = "ממתין לשאלה"; selfReport = nil }      // the statement is no longer on screen
         case "error":                                                  // server says why (credit used up / daily limit), first line is for the user
-            if latest { status = raw.split(whereSeparator: \.isNewline).first.map(String.init) ?? "שגיאת שרת"; current = nil; selfReport = nil; instructions = nil }
+            if latest { status = raw.split(whereSeparator: \.isNewline).first.map(String.init) ?? "שגיאת שרת"; current = nil; selfReport = nil; instructions = nil; failed = true }
         default:
-            if latest { status = String(raw.prefix(120)); current = nil; selfReport = nil }   // unexpected server message
+            if latest { status = String(raw.prefix(120)); current = nil; selfReport = nil; failed = true }   // unexpected server message
         }
         save()
     }
@@ -598,12 +629,20 @@ func refreshWindowList() async {
 let answerFont = Font.system(size: 44, weight: .semibold)
 
 struct AnswerBlock: View {
-    let item: Item; var big: CGFloat = 44; var showWhy = true
+    let item: Item; var big: CGFloat = 44; var showWhy = true; var showTag = false
+    // Which question this answer belongs to: its number and first three words.
+    var tag: String {
+        let w = item.question.split(separator: " ").prefix(3).joined(separator: " ")
+        let n: String = item.num.isEmpty ? "" : "שאלה \(item.num) · "
+        let tail: String = w.isEmpty ? "" : "…"
+        return n + w + tail
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
+            if showTag, !tag.isEmpty { Text(tag).font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary).lineLimit(1) }
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text(item.answer.isEmpty ? item.label : item.answer).font(.system(size: big, weight: .semibold)).lineLimit(2).minimumScaleFactor(0.5)
-                if item.low { Text("?").font(.system(size: big * 0.45, weight: .semibold)).foregroundStyle(.orange).help("המודל לא בטוח — כדאי לבדוק") }
+                if item.low { Text("לבדוק").font(.system(size: big * 0.55, weight: .semibold)).foregroundStyle(.orange).help("המודל לא בטוח — כדאי לבדוק") }
             }
             if let p = item.prompt, !item.label.isEmpty { Text(p).font(.system(size: big * 0.34, weight: .semibold)).foregroundStyle(Color.accentColor).lineLimit(2).minimumScaleFactor(0.5) }
             else if !item.label.isEmpty { Text("תשובה \(item.label)").font(.system(size: big * 0.34, weight: .semibold)).foregroundStyle(Color.accentColor) }
@@ -644,6 +683,7 @@ struct MainView: View {
                 Button { m.askAgain() } label: { Image(systemName: "arrow.clockwise") }.help("קרא את המסך עכשיו (⌥⌘R)")
                 Button { m.step(-1) } label: { Image(systemName: "chevron.right") }.help("שאלה קודמת")
                 Button { m.step(1) } label: { Image(systemName: "chevron.left") }.help("שאלה הבאה")
+                Button { m.speak.toggle() } label: { Image(systemName: m.speak ? "speaker.wave.2.fill" : "speaker.slash") }.help(m.speak ? "הקראה בקול פועלת (שאלון אישי) — לחץ לכיבוי" : "הקראה בקול כבויה — לחץ להפעלה")
                 Button { m.showList.toggle() } label: { Image(systemName: "sidebar.right") }.help("רשימת השאלות (⌥⌘L)")
                 Button { m.newSession() } label: { Image(systemName: "arrow.counterclockwise") }.help("סשן חדש: איפוס (הקודם נשמר)")
                 Button { m.onFloat?() } label: { Image(systemName: "pip.enter") }.help("חלון צף (⌥⌘M)")
@@ -699,6 +739,7 @@ struct Center: View {
     @ObservedObject var m: Model
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            if m.strip != nil && !m.needsPermission { StatusStrip(m: m).padding(.bottom, 12) }
             if m.needsPermission {
                 Empty(icon: "lock.shield", title: "צריך הרשאת הקלטת מסך",
                       text: "הפעל את ScreenReader ברשימה, ואז סגור ופתח את האפליקציה.",
@@ -727,14 +768,14 @@ struct Center: View {
                 Group {
                     if m.thinking { Text("• • •").font(answerFont).foregroundStyle(.tertiary) }
                     else if let it = m.current { AnswerBlock(item: it) }
-                    else if !m.status.isEmpty { Text(m.status).font(.system(size: 20, weight: .semibold)).foregroundStyle(.secondary) }   // errors / waiting: readable, not a footnote
+                    else if !m.status.isEmpty && m.strip == nil { Text(m.status).font(.system(size: 20, weight: .semibold)).foregroundStyle(.secondary) }   // errors / waiting: readable, not a footnote
                 }.padding(.top, 20)
                 Spacer()
             }
-            if (!m.status.isEmpty || !m.timing.isEmpty) && !m.needsPermission {
+            if (!m.status.isEmpty || (m.showTech && !m.timing.isEmpty)) && !m.needsPermission {
                 HStack { Text(m.status).font(.system(size: 11)).foregroundStyle(.secondary); Spacer()
-                    if !m.timing.isEmpty { Text(m.timing).font(.system(size: 10)).foregroundStyle(.tertiary).monospacedDigit() }
-                    if let it = m.current, !m.thinking { Text(String(format: "%.1f שנ׳", Double(it.ms) / 1000)).font(.system(size: 11)).foregroundStyle(.tertiary) } }
+                    if m.showTech, !m.timing.isEmpty { Text(m.timing).font(.system(size: 10)).foregroundStyle(.tertiary).monospacedDigit() }
+                    if m.showTech, let it = m.current, !m.thinking { Text(String(format: "%.1f שנ׳", Double(it.ms) / 1000)).font(.system(size: 11)).foregroundStyle(.tertiary) } }
                 .padding(.top, 8)
             }
         }
@@ -762,9 +803,28 @@ struct SelfReportCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: big ? 14 : 6) {
             if big { Label("שאלון אישי · אין תשובה נכונה", systemImage: "person.text.rectangle").font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary) }
-            Text(styled).font(.system(size: size, weight: .regular)).lineSpacing(big ? 6 : 2).fixedSize(horizontal: false, vertical: true)
-            Text(sr.options.joined(separator: "  |  ")).font(.system(size: big ? 14 : 11)).foregroundStyle(Color.accentColor).fixedSize(horizontal: false, vertical: true)
+            if sr.same {   // the statement is already simple: do not make the reader read it twice
+                Text("ההיגד ברור כמו שהוא").font(.system(size: big ? 20 : 15, weight: .semibold)).foregroundStyle(.secondary)
+                if !sr.keys.isEmpty { Text(sr.keys.joined(separator: " · ")).font(.system(size: size, weight: .heavy)).fixedSize(horizontal: false, vertical: true) }
+            } else {
+                Text(styled).font(.system(size: size, weight: .regular)).lineSpacing(big ? 6 : 2).fixedSize(horizontal: false, vertical: true)
+            }
+            VStack(alignment: .leading, spacing: big ? 4 : 3) {   // the options as on screen, one per line
+                ForEach(Array(sr.options.enumerated()), id: \.offset) { _, o in
+                    Text(o).font(.system(size: big ? 14 : 12)).foregroundStyle(Color.accentColor).fixedSize(horizontal: false, vertical: true)
+                }
+            }
         }
+    }
+}
+
+// Red = something went wrong, orange = re-checking / retrying. White text on a full-width colour strip.
+struct StatusStrip: View {
+    @ObservedObject var m: Model; var size: CGFloat = 15
+    var body: some View {
+        Text(m.status).font(.system(size: size, weight: .semibold)).foregroundStyle(.white).lineLimit(3)
+            .padding(.horizontal, 10).padding(.vertical, 6).frame(maxWidth: .infinity, alignment: .leading)
+            .background(m.strip ?? Color.clear, in: RoundedRectangle(cornerRadius: 7))
     }
 }
 
@@ -793,21 +853,23 @@ struct MiniView: View {
                 Text(miniTitle).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
                 Spacer()
                 Button { m.askAgain() } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.plain).foregroundStyle(.secondary).help("קרא את המסך עכשיו (⌥⌘R)")
+                Button { m.speak.toggle() } label: { Image(systemName: m.speak ? "speaker.wave.2.fill" : "speaker.slash") }.buttonStyle(.plain).foregroundStyle(.secondary).help(m.speak ? "הקראה בקול פועלת — לחץ לכיבוי" : "הקראה בקול כבויה — לחץ להפעלה")
                 Button(action: onExpand) { Image(systemName: "arrow.up.left.and.arrow.down.right") }.buttonStyle(.plain).foregroundStyle(.secondary).help("חלון מלא (⌥⌘M)")
             }
+            if m.strip != nil { StatusStrip(m: m, size: 13) }
             if m.thinking { Text("• • •").font(.system(size: 28, weight: .semibold)).foregroundStyle(.tertiary) }
             else if let sr = m.selfReport { SelfReportCard(sr: sr, big: false) }
             else if let u = m.instructions { Text(u.title).font(.system(size: 20, weight: .semibold)); Text("הנחיות יחידה").font(.system(size: 11)).foregroundStyle(.purple) }
-            else if let it = m.current { AnswerBlock(item: it, big: 28, showWhy: false) }
-            else { Text(m.status.isEmpty ? "מוכן" : m.status).font(.system(size: 13)).foregroundStyle(.secondary) }
+            else if let it = m.current { AnswerBlock(item: it, big: 28, showWhy: false, showTag: true) }
+            else if m.strip == nil { Text(m.status.isEmpty ? "מוכן" : m.status).font(.system(size: 13)).foregroundStyle(.secondary) }
         }
-        .padding(12).frame(width: 220, alignment: .leading)
+        .padding(12).frame(width: m.selfReport != nil && !m.thinking ? 320 : 220, alignment: .leading)   // a statement needs room: wider card on questionnaire screens
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
         .environment(\.layoutDirection, .rightToLeft)
     }
     var miniTitle: String {
         let u = m.unit.map { "\($0.num.isEmpty ? "" : "יחידה \($0.num) · ")\($0.title)" } ?? m.sourceLabel
-        return u + (m.current?.num.isEmpty == false ? " · שאלה \(m.current!.num)" : "")
+        return u   // the question number sits next to the answer itself (AnswerBlock tag)
     }
 }
 
@@ -933,7 +995,7 @@ nonisolated(unsafe) var hotkeyRefs: [EventHotKeyRef?] = []
         let sItem = NSMenuItem(); main.addItem(sItem)
         let sm = NSMenu(title: "סשן"); sItem.submenu = sm
         for (t, sel, k) in [("התחל / סיים  ⌥⌘S", #selector(mStart), ""), ("השהה / המשך  ⌥⌘P", #selector(mPause), ""),
-                            ("קרא עכשיו  ⌥⌘R", #selector(mAgain), ""), ("חלון צף  ⌥⌘M", #selector(mFloat), ""), ("סיכום", #selector(mSummary), ""),
+                            ("קרא עכשיו  ⌥⌘R", #selector(mAgain), ""), ("חלון צף  ⌥⌘M", #selector(mFloat), ""), ("סיכום", #selector(mSummary), ""), ("הקראה בקול (שאלון אישי)", #selector(mSpeak), ""), ("מידע טכני (זמנים)", #selector(mTech), ""),
                             ("סשן חדש (איפוס)", #selector(mNew), "n"), ("פתח סשנים קודמים", #selector(mFolder), "")] {
             let i = NSMenuItem(title: t, action: sel, keyEquivalent: k); i.target = self; sm.addItem(i)
         }
@@ -951,6 +1013,8 @@ nonisolated(unsafe) var hotkeyRefs: [EventHotKeyRef?] = []
     @objc func mAgain() { m.askAgain() }
     @objc func mFloat() { toggleFloat() }
     @objc func mNew() { m.newSession() }
+    @objc func mSpeak() { m.speak.toggle() }
+    @objc func mTech() { m.showTech.toggle() }
     @objc func mFolder() { NSWorkspace.shared.open(sessionsDir) }
     @objc func mSummary() { if m.session != nil { window.makeKeyAndOrderFront(nil); m.showSummary = true } }
 

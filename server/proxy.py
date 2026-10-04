@@ -248,6 +248,25 @@ def self_report_fix(out):
     return f"your PLAIN dropped {', '.join(miss)}. Rewrite PLAIN keeping these words exactly." if miss else ""
 
 
+PUNCT = ".,?!:;\"'׳״()[]־-–—"
+def mark_same(out, screen):
+    """SELF_REPORT: add "SAME: yes" when PLAIN is (almost) the statement as written on screen, so the app does not
+    make the reader read the same sentence twice. Word-level match against the OCR text; no model call."""
+    f = {l.split(":", 1)[0].strip().upper(): l.split(":", 1)[1].strip() for l in out.splitlines() if ":" in l}
+    if f.get("KIND", "").lower() != "self_report" or not f.get("PLAIN") or not screen:
+        return out
+    import difflib
+    toks = lambda t: [w for w in (x.strip(PUNCT) for x in t.split()) if w]
+    p, t = toks(f["PLAIN"]), toks(screen)
+    blocks = [b for b in difflib.SequenceMatcher(None, p, t, autojunk=False).get_matching_blocks() if b.size]
+    same = False
+    if p and blocks:
+        matched = sum(b.size for b in blocks)
+        span = blocks[-1].b + blocks[-1].size - blocks[0].b      # the matched words must sit together on screen
+        same = matched >= 0.9 * len(p) and span <= len(p) + max(2, len(p) // 5)
+    return out + f"\nSAME: {'yes' if same else 'no'}"
+
+
 def first_ok(key, models, *a, **kw):
     """Busy/quota/unknown model -> next model. Returns (text, error)."""
     err = ""
@@ -320,6 +339,7 @@ class H(BaseHTTPRequestHandler):
             ok = bool(again) and "KIND: self_report" in again and not self_report_fix(again)
             if ok: out = again
             print(f"self_report retry -> {'fixed' if ok else 'not fixed'}", flush=True)
+        out = mark_same(out, args[0] if isinstance(args[0], str) else "")
         if out and "KIND: question" in out and "CONF: low" in out:
             self.chunk("CHECKING\n")                      # app shows "בודק שוב…"
             better, _ = first_ok(key, STRONG, *args, strong=True)
