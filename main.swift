@@ -71,6 +71,21 @@ func similarity(_ a: String, _ b: String) -> Double {
     if x.isEmpty && y.isEmpty { return 1 }
     return Double(x.intersection(y).count) / Double(x.union(y).count)
 }
+// Times on screen as minutes/seconds values. A running timer moves by a few units between checks; a time inside
+// a question changes by much more (or the number of times changes).
+func timeValues(_ s: String) -> [Int] {
+    let re = try! NSRegularExpression(pattern: #"\b(\d{1,2}):(\d{2})\b"#)
+    return re.matches(in: s, range: NSRange(s.startIndex..., in: s)).compactMap { m in
+        guard let a = Range(m.range(at: 1), in: s), let b = Range(m.range(at: 2), in: s) else { return nil }
+        return Int(s[a])! * 60 + Int(s[b])!
+    }.sorted()
+}
+func timesMoved(_ old: String, _ new: String) -> Bool {
+    let a = timeValues(old), b = timeValues(new)
+    if a.isEmpty && b.isEmpty { return false }
+    if a.count != b.count { return !old.isEmpty }
+    return zip(a, b).contains { abs($0 - $1) > 10 }
+}
 func diff(_ a: [UInt8], _ b: [UInt8]) -> Double {
     guard a.count == b.count, !a.isEmpty else { return 1 }
     var n = 0; for i in 0..<a.count where abs(Int(a[i]) - Int(b[i])) > 12 { n += 1 }
@@ -165,7 +180,17 @@ func questionKey(_ text: String, _ image: CGImage, _ l: Layout) -> String {
     guard l.visual, let c = image.cropping(to: l.crop.integral) else { return t }
     return t + "|" + fingerprint(c, w: 64, h: 36).map { String($0 >> 5) }.joined()
 }
-nonisolated(unsafe) var answerCache: [String: (mode: String, answer: String)] = [:]
+// Written from parallel detached requests and cleared from the main actor: every access goes through the lock.
+final class AnswerCache: @unchecked Sendable {
+    private var d: [String: (mode: String, answer: String)] = [:]
+    private let lock = NSLock()
+    subscript(_ k: String) -> (mode: String, answer: String)? {
+        get { lock.lock(); defer { lock.unlock() }; return d[k] }
+        set { lock.lock(); defer { lock.unlock() }; d[k] = newValue }
+    }
+    func removeAll() { lock.lock(); d.removeAll(); lock.unlock() }
+}
+let answerCache = AnswerCache()
 
 // TEXT -> text only; VISUAL/MIXED -> cropped screenshot + text. Repeated question -> cached, no request.
 // context = current unit instructions (+ reading passage); visualUnit = always send the image.
@@ -366,7 +391,7 @@ func refreshWindowList() async {
     var hasChosenSource: Bool { UserDefaults.standard.string(forKey: "source") != nil }
     var onFloat: (() -> Void)?
     var picker: RegionPicker?
-    private var timer: Timer?, busy = false, ticks = 0, capMs = 0, ocrMs = 0, lastPrint: [UInt8] = [], lastText = "", lastImage: CGImage?
+    private var timer: Timer?, busy = false, ticks = 0, lastRaw = "", capMs = 0, ocrMs = 0, lastPrint: [UInt8] = [], lastText = "", lastImage: CGImage?
 
     init() {
         if let d = try? Data(contentsOf: sessionURL), let s = try? JSONDecoder().decode(Session.self, from: d), s.end == nil, !s.units.isEmpty {
@@ -387,12 +412,12 @@ func refreshWindowList() async {
         timer?.invalidate(); timer = nil; thinking = false
         if session?.end == nil { session?.end = Date() }
         archive(); session = nil; current = nil; instructions = nil; status = ""; phase = .idle
-        try? FileManager.default.removeItem(at: sessionURL); answerCache.removeAll(); lastPrint = []; lastText = ""
+        try? FileManager.default.removeItem(at: sessionURL); answerCache.removeAll(); lastPrint = []; lastText = ""; lastRaw = ""
     }
     func save() { if let s = session, let d = try? JSONEncoder().encode(s) { try? d.write(to: sessionURL) } }
 
     func loadWindows() { Task { await refreshWindowList(); windows = visibleWindows } }
-    func setSource(_ s: Source) { source = s; s.save(); sourceLabel = s.label; lastPrint = []; lastText = "" }
+    func setSource(_ s: Source) { source = s; s.save(); sourceLabel = s.label; lastPrint = []; lastText = ""; lastRaw = "" }
     func pickRegion() {
         picker = RegionPicker { [weak self] r in if let r { self?.setSource(.region(r)) }; self?.picker = nil }
         picker?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
@@ -406,7 +431,7 @@ func refreshWindowList() async {
         guard CGPreflightScreenCaptureAccess() else { CGRequestScreenCaptureAccess(); needsPermission = true; return }
         needsPermission = false
         if session == nil || session?.end != nil { session = Session(); current = nil; instructions = nil }
-        phase = .running; status = "ממתין לשאלה"; lastPrint = []; lastText = ""
+        phase = .running; status = "ממתין לשאלה"; lastPrint = []; lastText = ""; lastRaw = ""
         tick()
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { _ in Task { @MainActor in self.tick() } }
@@ -444,7 +469,7 @@ func refreshWindowList() async {
     func step(_ d: Int) {
         let xs = allItems; guard !xs.isEmpty else { return }
         let i = xs.firstIndex { $0.id == current?.id } ?? xs.count - 1
-        current = xs[max(0, min(xs.count - 1, i + d))]; instructions = nil
+        current = xs[max(0, min(xs.count - 1, i + d))]; instructions = nil; selfReport = nil
     }
 
     func tick() {
@@ -465,8 +490,11 @@ func refreshWindowList() async {
                 let text = try await Task.detached(priority: .utility) { normalize(try ocr(img)) }.value
                 ocrMs = Int(Date().timeIntervalSince(to) * 1000)
                 let stable = text.replacingOccurrences(of: #"\b\d{1,2}:\d{2}(:\d{2})?\b"#, with: "", options: .regularExpression)
-                // clock ticking or OCR noise on the same screen != new screen
-                if !text.isEmpty, similarity(stable, lastText) < 0.9 { lastText = stable; handle(img, text) }
+                // clock ticking or OCR noise on the same screen != new screen; but a question that differs only by
+                // one word or by a time in its text (16:25 -> 15:25) is new
+                if !text.isEmpty, similarity(stable, lastText) < 0.97 || timesMoved(lastRaw, text) {
+                    lastText = stable; lastRaw = text; handle(img, text)
+                }
             } catch {
                 status = error.localizedDescription      // e.g. chosen window closed; keep trying
             }
