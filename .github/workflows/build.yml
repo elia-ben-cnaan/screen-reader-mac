@@ -7,6 +7,10 @@ on:
         description: "Full e2e (all units x10 + all 300 SELF_REPORT). Default: small sample (~1/6 of the minutes)"
         type: boolean
         default: false
+      e2e:
+        description: "Run the end-to-end step (uses paid model calls). Untick to only check that the app builds"
+        type: boolean
+        default: true
 permissions: { contents: write }
 jobs:
   mac:
@@ -23,7 +27,7 @@ jobs:
           done
           ls q-*.png && ScreenReader.app/Contents/MacOS/ScreenReader --layout q-*.png || echo "skipped"
       - name: End-to-end (OCR on Mac -> server -> answer)   # uses model quota: run manually (Actions -> build -> Run workflow)
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && inputs.e2e
         timeout-minutes: 75
         env: { SR_SERVER: "${{ secrets.SR_SERVER }}", SR_TOKEN: "${{ secrets.SR_TOKEN }}" }
         run: |

@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Does the on-screen simplification say the same as the statement? For every SELF_REPORT bank item:
 send its text + options to a proxy (as OCR text), take PLAIN, then ask a separate judge model whether PLAIN asks
-the same thing as the dataset's plain meaning (same behaviour, same direction/negation, same qualifiers, same
-frame: agreement / frequency / yes-no). Also reports PLAIN length and qualifier keeping.
-Usage: fidelity.py <port> [limit] [--out file.jsonl]"""
+the same thing as the ORIGINAL statement (same behaviour, same direction/negation, nothing dropped, fits the
+response format). The bank's plain_meaning is NOT used as the reference: it is one sentence shared by a whole
+family, so it leaves out the conditions each variant adds. Also reports PLAIN length and qualifier keeping.
+Usage: fidelity.py <port> [limit] [--out file.jsonl] [--ids SR-001,SR-007]
+limit N < 300 takes N items spread over all families and all 5 variants. Each item = 1 proxy request + 1 judge call."""
 import json, os, re, sys, statistics, urllib.request
 from concurrent.futures import ThreadPoolExecutor
 port = sys.argv[1]; limit = int(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2].isdigit() else 0
@@ -11,7 +13,12 @@ out = sys.argv[sys.argv.index("--out") + 1] if "--out" in sys.argv else None
 C = os.path.expanduser("~/.config/screenreader")
 tok = open(f"{C}/client_token").read().strip(); key = open(f"{C}/llm_key").read().strip()
 bank = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "bank.json")))
-if limit: bank = bank[::max(1, len(bank) // limit)][:limit]
+ids = set(sys.argv[sys.argv.index("--ids") + 1].split(",")) if "--ids" in sys.argv else None
+if ids: bank = [b for b in bank if b["id"] in ids]
+elif limit and limit < len(bank):   # family i -> its variant i%5, so every variant is covered equally
+    fam = [bank[i:i + 5] for i in range(0, len(bank), 5)]
+    step = max(1, len(fam) // limit)
+    bank = [f[(i // step) % 5] for i, f in enumerate(fam) if i % step == 0][:limit] if limit <= len(fam) else bank[:limit]
 QUAL = ["לפעמים", "תמיד", "בדרך כלל", "מעולם", "אף פעם", "לעיתים", "רק"]
 
 def ask(it):
@@ -22,12 +29,17 @@ def ask(it):
     return f
 
 def judge(it, plain):
-    q = (f"Original statement (Hebrew questionnaire): {it['text']}\nResponse format: {' | '.join(it['options'])}\n"
-         f"Reference meaning: {it['plain_meaning']}\nSimplified version shown to the reader: {plain}\n\n"
-         "Would a reader who only reads the simplified version understand exactly what the original asks — same behaviour, "
-         "same direction (positive/negative, double negation resolved correctly), same qualifiers (always/sometimes/never/only/"
-         "without permission), and a question that fits the response format? Reply with one word: SAME or DIFFERENT, then a dash and max 10 words why.")
-    body = {"contents": [{"role": "user", "parts": [{"text": q}]}], "generationConfig": {"maxOutputTokens": 400, "thinkingConfig": {"thinkingBudget": 256}}}
+    q = (f"Original statement (Hebrew personality/integrity questionnaire): {it['text']}\nResponse options on screen: {' | '.join(it['options'])}\n"
+         f"Simplified version shown to a weak reader: {plain}\n\n"
+         "The reader sees only the simplified version and the options. Check three things:\n"
+         "1 MEANING: same behaviour/attitude and same direction as the original after resolving its negations "
+         "(\"לא נכון לומר שמעולם לא היה מצב שבו X\" means \"it has happened that X\" = \"קרה ש-X\" / \"יש מצבים ש-X\"; it does NOT mean X is usual).\n"
+         "2 KEPT: every condition, reason, comparison, object and frequency/quantity word of the original is still there "
+         "(a plain synonym is fine; a missing condition is not).\n"
+         "3 FORMAT: the options answer it directly — a first-person statement for agreement or true-for-me options, "
+         "\"באיזו תדירות\" for a frequency scale, \"האם\" for yes/no; choosing the same option must mean the same as in the original.\n"
+         "Reply on one line: SAME or DIFFERENT, then a dash, then which check failed (meaning / kept / format) and max 10 words why.")
+    body = {"contents": [{"role": "user", "parts": [{"text": q}]}], "generationConfig": {"maxOutputTokens": 400, "thinkingConfig": {"thinkingBudget": 512}}}
     r = urllib.request.Request("https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent",
                                data=json.dumps(body).encode(), headers={"content-type": "application/json", "x-goog-api-key": key})
     j = json.load(urllib.request.urlopen(r, timeout=60))

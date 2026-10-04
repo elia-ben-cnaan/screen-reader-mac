@@ -202,7 +202,8 @@ func explain(_ image: CGImage, _ screenText: String, context: String = "", visua
     let png = l.visual ? croppedPNG(image, l.crop) : visualUnit ? croppedPNG(image, CGRect(x: 0, y: 0, width: image.width, height: image.height)) : nil
     let mode = png == nil ? "TEXT" : "VISUAL"
     let answer = try await ask(screenText, png, context, onPartial)
-    answerCache[key] = (mode, answer)
+    let kind = Reply(answer).kind
+    if !kind.isEmpty && kind != "error" { answerCache[key] = (mode, answer) }   // never cache a server error or an empty reply
     return (mode, answer, false)
 }
 
@@ -377,7 +378,7 @@ func refreshWindowList() async {
     @Published var current: Item?
     @Published var instructions: Unit?          // last screen was a unit intro
     // SELF_REPORT screen: plain meaning + the options on screen. Shown only; never recorded, never suggests an option.
-    struct SelfReport { var plain: String; var options: [String]; var neg: Bool }
+    struct SelfReport { var plain: String; var options: [String]; var neg: Bool; var keys: [String] = [] }   // keys = words of plain shown in bold
     @Published var selfReport: SelfReport?
     @Published var timing = ""                   // capture · OCR · server ms of the last screen
     @Published var status = ""                  // waiting / thinking / errors
@@ -526,12 +527,12 @@ func refreshWindowList() async {
                         if Reply(p).checking { Task { @MainActor in if my == self.seq { self.status = "בודק שוב…" } } }
                     }
                 }.value
-                if let a = r?.answer, !Reply(a).kind.isEmpty { break }
-                answerCache.removeAll(); r = nil
+                if let a = r?.answer, !Reply(a).kind.isEmpty { break }   // includes KIND: error (credit / daily limit): retrying cannot help
+                r = nil
             }
             inflight -= 1
             done[my] = r.map { (Reply($0.answer), $0.answer, Int(Date().timeIntervalSince(t0) * 1000), text) } ?? nil
-            if r == nil, my == seq { status = "אין חיבור לשרת" }
+            if r == nil, my == seq { status = "אין חיבור לשרת · ⌥⌘R לניסיון נוסף"; current = nil; selfReport = nil }
             while let entry = done[nextApply] {
                 done[nextApply] = nil
                 if let (rep, raw, ms, txt) = entry {
@@ -561,20 +562,23 @@ func refreshWindowList() async {
             if session!.units.isEmpty { session!.units.append(Unit(title: "כללי", num: "", summary: "", visual: false)) }
             let it = Item(num: r["NUM"], question: r["Q"], answer: r["A"], label: r["ANSWER"], why: r["WHY"], low: r["CONF"].lowercased() == "low", ms: ms, trap: r["TRAP"].isEmpty ? nil : r["TRAP"], format: r["FORMAT"].isEmpty ? nil : r["FORMAT"].lowercased())
             let ui = session!.units.count - 1
-            if let i = session!.units[ui].items.firstIndex(where: { $0.question == it.question || (!it.num.isEmpty && $0.num == it.num) }) {
+            if let i = session!.units[ui].items.firstIndex(where: { $0.question == it.question || (!it.num.isEmpty && $0.num == it.num && (replace || similarity($0.question, it.question) >= 0.4)) }) {
                 session!.units[ui].items[i] = it                         // came back to a question: update, don't duplicate
             } else { session!.units[ui].items.append(it) }
             if latest { current = it; instructions = nil; selfReport = nil; status = "" }
         case "self_report":
             if latest {
                 selfReport = SelfReport(plain: r["PLAIN"], options: r["OPTIONS"].components(separatedBy: "|").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty },
-                                        neg: r["NEG"].lowercased() == "yes")
+                                        neg: r["NEG"].lowercased() == "yes",
+                                        keys: r["KEY"].components(separatedBy: "|").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })
                 current = nil; instructions = nil; status = ""
             }
         case "other":
-            if latest { status = "ממתין לשאלה" }
+            if latest { status = "ממתין לשאלה"; selfReport = nil }      // the statement is no longer on screen
+        case "error":                                                  // server says why (credit used up / daily limit), first line is for the user
+            if latest { status = raw.split(whereSeparator: \.isNewline).first.map(String.init) ?? "שגיאת שרת"; current = nil; selfReport = nil; instructions = nil }
         default:
-            if latest { status = String(raw.prefix(120)) }             // server message / error
+            if latest { status = String(raw.prefix(120)); current = nil; selfReport = nil }   // unexpected server message
         }
         save()
     }
@@ -705,7 +709,7 @@ struct Center: View {
                 } else {
                     Empty(icon: "play.circle", title: "מוכן", text: "פתח את הסימולטור ולחץ התחל (⌥⌘S).", action: nil)
                 }
-            } else if let sr = m.selfReport {
+            } else if let sr = m.selfReport, !m.thinking {   // while the next statement is being read, never show the previous meaning
                 SelfReportCard(sr: sr, big: true)
                 Spacer()
             } else if let u = m.instructions {
@@ -723,6 +727,7 @@ struct Center: View {
                 Group {
                     if m.thinking { Text("• • •").font(answerFont).foregroundStyle(.tertiary) }
                     else if let it = m.current { AnswerBlock(item: it) }
+                    else if !m.status.isEmpty { Text(m.status).font(.system(size: 20, weight: .semibold)).foregroundStyle(.secondary) }   // errors / waiting: readable, not a footnote
                 }.padding(.top, 20)
                 Spacer()
             }
@@ -740,10 +745,24 @@ struct Center: View {
 // SELF_REPORT: what the statement really asks, and the options as they appear on screen. No recommendation.
 struct SelfReportCard: View {
     let sr: Model.SelfReport; let big: Bool
+    var size: CGFloat { big ? 26 : 16 }
+    // The words that flip or limit the meaning (לא, בלי, תמיד, רק, קרה...) are heavier than the rest of the sentence.
+    var styled: AttributedString {
+        var out = AttributedString()
+        let words = sr.plain.split(separator: " ")
+        for (i, w) in words.enumerated() {
+            var part = AttributedString(String(w))
+            let bare = w.trimmingCharacters(in: CharacterSet(charactersIn: ".,?!:;\"'׳״()"))
+            if sr.keys.contains(bare) { part.swiftUI.font = Font.system(size: size, weight: .heavy) }
+            out += part
+            if i < words.count - 1 { out += AttributedString(" ") }
+        }
+        return out
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: big ? 14 : 6) {
             if big { Label("שאלון אישי · אין תשובה נכונה", systemImage: "person.text.rectangle").font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary) }
-            Text(sr.plain).font(.system(size: big ? 24 : 15, weight: .semibold)).fixedSize(horizontal: false, vertical: true)
+            Text(styled).font(.system(size: size, weight: .regular)).lineSpacing(big ? 6 : 2).fixedSize(horizontal: false, vertical: true)
             Text(sr.options.joined(separator: "  |  ")).font(.system(size: big ? 14 : 11)).foregroundStyle(Color.accentColor).fixedSize(horizontal: false, vertical: true)
         }
     }

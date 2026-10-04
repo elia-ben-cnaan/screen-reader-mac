@@ -7,8 +7,26 @@ Response: text/plain lines (format in PROMPT). If the fast model is unsure, a st
 "CHECKING" is sent first so the app can show it.
 Config (/root/.config/screenreader/): llm_key (Gemini API key), client_token (shared with the app).
 """
-import json, os, re, time, urllib.request, urllib.error
+import json, os, re, threading, time, urllib.request, urllib.error
 blocked = {}   # model -> unix time its quota frees up (from Google's "retry in ...")
+# Spend guard: every model call is counted per day; past DAILY_MAX the server answers "limit" instead of calling
+# the paid model (a leaked token or a runaway test cannot drain the prepaid credit). 0 = no cap.
+DAILY_MAX = int(os.environ.get("SR_DAILY_MAX", "1500"))
+calls = {"day": "", "n": 0}
+calls_lock = threading.Lock()
+def count_call(model):
+    """Returns False when today's budget is used up. Logs one line per call (no question text)."""
+    with calls_lock:
+        day = time.strftime("%Y-%m-%d")
+        if calls["day"] != day: calls["day"], calls["n"] = day, 0
+        if DAILY_MAX and calls["n"] >= DAILY_MAX: return False
+        calls["n"] += 1; n = calls["n"]
+    print(f"call {n}/{DAILY_MAX or '-'} {model}", flush=True)
+    return True
+# Non-retryable failures get a reply the app can show as is (Hebrew first line) and must not retry.
+def error_reply(code, msg): return f"{msg}\nKIND: error\nCODE: {code}"
+CREDIT_MSG = "נגמר הקרדיט בשרת — צריך להטעין כדי להמשיך"
+LIMIT_MSG = "הגענו לתקרת השאלות היומית בשרת"
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 CONF = os.path.expanduser("~/.config/screenreader")
@@ -37,8 +55,9 @@ GUIDE = """How to solve each kind (use the unit instructions in CONTEXT when pre
 - Cube nets / folding, rotation vs mirror, hidden figure, dominoes: reason from the image; a mirror image is never a rotation.
 - Attention / accuracy (compare strings, count symbols): compare character by character from the image, not the OCR.
 - English: vocabulary, restatement (same meaning, not just same words), reading comprehension from the text only.
-- True / False / Cannot tell (נכון / לא נכון / לא ניתן לדעת) on a short set of rules + facts: treat the given rules
-  as the COMPLETE procedure ("על סמך הכתוב/הנוהל בלבד"): the listed rules are the only source of any obligation,
+- True / False / Cannot tell (נכון / לא נכון / לא ניתן לדעת) on a short set of rules + facts:
+  first separate the CLAIM (the sentence in quotes / after "הטענה") from the FACTS: the claim is what you test, never
+  use it as a fact. Then treat the given rules as the COMPLETE procedure ("על סמך הכתוב/הנוהל בלבד"): the listed rules are the only source of any obligation,
   so if no rule is triggered by the facts, the obligation did not exist (that is לא נכון, not לא ניתן לדעת). Method: (1) write each rule as "IF condition THEN result";
   (2) compute every condition from the facts exactly (compare amounts to thresholds — "עולה על X" is strictly more
   than X, subtract minutes from departure times, count days from the given dates); a rule for a special case
@@ -48,6 +67,9 @@ GUIDE = """How to solve each kind (use the unit instructions in CONTEXT when pre
   exception or a fact violates. לא ניתן לדעת = only when the claim depends on something the text never states.
   Traps: "only if A" does not mean A alone is enough; a rule "no B -> returned" does not mean every return is because
   of no B (other rules may cause it), and a rejection never tells you which other documents were included.
+  Direction: a rule "A -> B" plus the fact B does NOT give A. When the facts state only an outcome (he got a warning
+  letter, it was rejected) and the claim is about its cause, and two or more rules lead to that outcome, the answer is
+  לא ניתן לדעת. "A -> B" plus "not B" does give "not A" (נכון).
   Do not answer לא ניתן לדעת just because a value must be calculated — calculate it. When the claim states a number
   (a fine, a sum, a time), compute the number from the rules and compare: equal -> נכון, different -> לא נכון; the
   ANSWER must match the result of your own calculation in WHY.
@@ -59,9 +81,15 @@ First classify the screen:
 - QUESTION: one active question with answer options.
 - SELF_REPORT: a statement or question about the test-taker's OWN behavior, habits, attitudes or opinions, answered on a
   personal scale (yes/no, true/not true for me, agreement, frequency). It has no objectively correct answer.
+  Also SELF_REPORT: "what would you do" situations (מה תעשה / כיצד תנהג / מה הכי סביר שתעשה) whose options are possible
+  behaviours, questions about the test-taker's own past (כמה פעמים איחרת...), and opinions about people in general
+  (רוב האנשים...). These have lettered options but no correct answer — never give ANSWER for them.
+  A question about facts, numbers, a text or given rules is a QUESTION even if worded in first person or answered כן/לא.
 - OTHER: anything else (menu, loading, score, unrelated app).
 Reply with these lines only, no extra text. Write every value (Q, A, WHY, UNIT, SUMMARY) in the same language as the question on screen:
 For QUESTION:
+WORK: <only for rules (נכון / לא נכון / לא ניתן לדעת), calculations and sequences: the computation itself, step by step, max 40 words.
+  Finish it before you write ANSWER; ANSWER, A and WHY must state the final result of WORK, with no second thoughts. Otherwise ->
 ANSWER: <option label exactly as on screen, e.g. א/ב/ג/ד or 1/2/3/4; for FORMAT typed: the value to type (number or word);
   for FORMAT order: all labels in the correct order joined by " ← " (first ← ... ← last); for FORMAT multi: every correct label joined by " + ">
 FORMAT: <choice (pick one option) | typed (an input box, no options) | order (arrange items in order) | multi ("סמן את כל ה..." / select all that apply)>
@@ -88,11 +116,18 @@ PLAIN: <the real meaning in very simple everyday Hebrew, as short as possible (a
   - frequency scale (אף פעם ... תמיד) -> "באיזו תדירות ...?";
   - yes/no -> "האם ...?".
   Resolve negation and double negation logically ("לא נכון לומר שמעולם לא היה מצב שבו X" -> "קרה ש..." / "יש מצבים ש...").
+  Simplify the STRUCTURE (negations, "נכון לומר ש", long or passive clauses), not the content words: reuse the statement's
+  own words whenever they are simple, and never swap a phrase for a looser one ("מעבר למה שתכננתי" is not "הרבה",
+  "מי שיש לו אינטרס בהחלטה" is not "מי שההחלטה השפיעה עליו", "באופן שאחרים יכלו לחוות כמאיים" is not "שנתפס כמאיים",
+  "טעות שהייתי מעורב בה" is not "טעות שלי"). Keep "לדעתך" / "אני מרגיש ש" / "כשנראה לי ש", and degree words (מאוד, קצת, משמעותי).
+  If the statement is already short and simple, PLAIN is the statement itself, word for word (only put it in the right form).
+  PLAIN must be one complete, grammatical Hebrew sentence — read it again before you answer.
+  A statement is always in first person (אני / קרה ש + first person), even if the original says "אתה".
+  A "האם" question speaks to the reader (אתה / לך), as the original question does.
   Shorten only the wording, never the content: keep every condition, reason, comparison and object of the original
   (e.g. "גם במצב לא נוח", "לצורך אישי", "במקום להציג כעובדה", "כי חשבתי שאינו חשוב", "קטן", "שאינו שלי", "בלי לבדוק אם מותר"),
   keep "קרה ש" / "יש מצבים ש" when the original says it, and keep the person (I / you) consistent with the options. Keep every qualifier word
   that changes meaning: לא, מעולם, אף פעם, אי פעם, תמיד, בדרך כלל, לעיתים, לפעמים, רק, ללא, בלי.>
-KEY: <the one word in PLAIN that most changes its meaning (e.g. תמיד / לפעמים / בלי / ללא / לא / רק), or "-">
 OPTIONS: <every response option visible on screen, exactly as written, in on-screen order, separated by " | ">
 NEG: <yes if the original wording contains a negation, else no>
 QUALIFIERS: <meaning-bearing words from the STATEMENT itself (not from the answer options) that must survive in PLAIN:
@@ -112,6 +147,8 @@ def read(name):
         return ""
 
 
+# "cannot tell" as the simulators (and OCR) spell it
+RULES_RE = re.compile(r"(לא|אי)[- ]?(ניתן|אפשר) (לדעת|לקבוע|להסיק)|אין (מספיק )?(מידע|נתונים)")
 def gemini(key, model, text, image, context, strong=False):
     parts = []
     if image:
@@ -119,8 +156,9 @@ def gemini(key, model, text, image, context, strong=False):
     parts.append({"text": (f"CONTEXT:\n{context}\n\n" if context else "") + "SCREEN OCR:\n" + text})
     gen = {"maxOutputTokens": 2500 if not strong else 6000}
     if not strong:   # true/false/cannot-tell logic needs more reasoning than a lookup question
-        gen["thinkingConfig"] = {"thinkingBudget": 3072 if "לא ניתן לדעת" in text else 1024}
-        gen["maxOutputTokens"] = 5000 if "לא ניתן לדעת" in text else gen["maxOutputTokens"]
+        rules = bool(RULES_RE.search(text))
+        gen["thinkingConfig"] = {"thinkingBudget": 3072 if rules else 1024}
+        gen["maxOutputTokens"] = 5000 if rules else gen["maxOutputTokens"]
     body = {"system_instruction": {"parts": [{"text": PROMPT}]},
             "contents": [{"role": "user", "parts": parts}], "generationConfig": gen}
     req = urllib.request.Request(
@@ -132,6 +170,25 @@ def gemini(key, model, text, image, context, strong=False):
                    for p in c.get("content", {}).get("parts", []) if not p.get("thought")).strip()
 
 
+# Words that flip or limit the meaning of a self-report statement. KEY = these words exactly as they appear in PLAIN
+# (with a one-letter prefix such as ש/ו), so the app can show them in bold. Computed here, not by the model.
+KEY_WORDS = {"לא", "אין", "איני", "אינני", "בלי", "ללא", "מעולם", "אף", "אי", "פעם", "תמיד", "רק", "לפעמים", "לעיתים",
+             "קרובות", "רחוקות", "בדרך", "כלל", "כמעט", "קרה"}
+def key_words(plain):
+    out = []
+    ws = [w.strip(".,?!:;\"'׳״()") for w in plain.split()]
+    for i, w in enumerate(ws):
+        base = w if w in KEY_WORDS else (w[1:] if len(w) > 2 and w[0] in "שוכ" and w[1:] in KEY_WORDS else "")
+        if not base: continue
+        # words that only count as part of a pair: אף פעם / אי פעם / בדרך כלל / לעיתים קרובות
+        pair = {"אף": "פעם", "אי": "פעם", "בדרך": "כלל"}
+        if base in pair and (i + 1 >= len(ws) or ws[i + 1] != pair[base]): continue
+        if base == "פעם" and (i == 0 or ws[i - 1].lstrip("שוכ") not in ("אף", "אי")): continue
+        if base == "כלל" and (i == 0 or ws[i - 1].lstrip("שוכ") != "בדרך"): continue
+        if base in ("קרובות", "רחוקות") and (i == 0 or ws[i - 1].lstrip("שוכ") != "לעיתים"): continue
+        if w not in out: out.append(w)
+    return out
+HESITATION = re.compile(r"רגע[:,!. ]|בעצם |טעות|\bwait\b|\bactually\b", re.I)
 LABELS = "אבגדהABCDE12345"
 # A choice label is one Hebrew/Latin letter or a 1-2 digit number, alone or followed by a separator ("ב", "ב.", "ב (48)", "12").
 LABEL_RE = re.compile(r"^([א-ת]|[A-Ea-e]|\d{1,2})(?=$|[\s.)\]:—–'׳\"״-])")
@@ -139,10 +196,16 @@ def tidy(out):
     """Models sometimes drop the ANSWER line or write 'ב.' — normalise so the app always gets a clean label."""
     lines = [l.strip().replace("**", "") for l in out.splitlines() if l.strip()]
     f = {l.split(":", 1)[0].strip().upper(): l.split(":", 1)[1].strip() for l in lines if ":" in l}
+    if f.get("KIND", "").lower() == "self_report":   # only the meaning and the on-screen options ever leave the server
+        f["KIND"] = "self_report"
+        f["KEY"] = " | ".join(key_words(f.get("PLAIN", ""))) or "-"   # the app shows these words in bold
+        return "\n".join(f"{k}: {f[k]}" for k in ("KIND", "PLAIN", "KEY", "OPTIONS", "NEG", "QUALIFIERS") if k in f)
     if f.get("KIND", "").lower() != "question":
-        return "\n".join(lines)   # instructions / self_report / other pass through
+        return "\n".join(lines)   # instructions / other pass through
     f["KIND"] = "question"
     if "CONF" in f: f["CONF"] = f["CONF"].lower()   # the re-check below keys on "CONF: low" exactly
+    if HESITATION.search(f.get("WHY", "") + " " + f.get("TRAP", "")):   # the model changed its mind mid-line: its ANSWER may be the earlier guess
+        f["CONF"] = "low"
     fmt = f.get("FORMAT", "").strip().lower()
     if fmt in ("typed", "order", "multi"):
         f["FORMAT"] = fmt
@@ -167,15 +230,22 @@ def tidy(out):
 
 
 MUST_KEEP = ["לפעמים", "תמיד", "בדרך כלל", "מעולם", "אף פעם", "לעיתים", "רק"]
-def missing_qualifiers(out):
-    """SELF_REPORT: qualifiers the model itself listed but then left out of PLAIN."""
+RESOLVED = re.compile(r"^(קרה ש|יש מצבים ש|לפעמים |היה מצב ש|האם קרה ש)")
+UNRESOLVED = re.compile(r"לא נכון (לומר )?ש|אין זה נכון ש")
+def self_report_fix(out):
+    """SELF_REPORT: what is wrong with PLAIN, as a correction for one retry ("" = fine)."""
     f = {l.split(":", 1)[0].strip().upper(): l.split(":", 1)[1].strip() for l in out.splitlines() if ":" in l}
     if f.get("KIND", "").lower() != "self_report":
-        return []
-    q = [w.strip() for w in f.get("QUALIFIERS", "").split("|") if w.strip() in MUST_KEEP]
+        return ""
     plain = f.get("PLAIN", "")
+    if UNRESOLVED.search(plain):
+        return "your PLAIN still contains the double negation. Rewrite it as the positive meaning (\"קרה ש...\")."
+    q = [w.strip() for w in f.get("QUALIFIERS", "").split("|") if w.strip() in MUST_KEEP]
+    if RESOLVED.search(plain):   # a resolved "מעולם לא ... לא" no longer has its מעולם / אף פעם
+        q = [w for w in q if w not in ("מעולם", "אף פעם")]
     # whole word (a one-letter prefix like ש/ו/ב is fine), not a substring: "רק" inside "מרקד" does not count
-    return [w for w in q if not re.search(rf"(?<![א-ת])[א-ת]?{re.escape(w)}(?![א-ת])", plain)]
+    miss = [w for w in q if not re.search(rf"(?<![א-ת])[א-ת]?{re.escape(w)}(?![א-ת])", plain)]
+    return f"your PLAIN dropped {', '.join(miss)}. Rewrite PLAIN keeping these words exactly." if miss else ""
 
 
 def first_ok(key, models, *a, **kw):
@@ -186,6 +256,8 @@ def first_ok(key, models, *a, **kw):
             if not err:   # every model may be over quota: say so instead of returning an empty body
                 err = f"Model error 429: all models over quota, retry in {int(min(blocked[x] for x in models if x in blocked) - time.time()) + 1}s"
             continue
+        if not count_call(m):
+            return error_reply("limit", LIMIT_MSG), ""
         try:
             out = tidy(gemini(key, m, *a, **kw))
             if "KIND:" in out:
@@ -195,6 +267,10 @@ def first_ok(key, models, *a, **kw):
         except urllib.error.HTTPError as e:
             body = e.read().decode()
             err = f"Model error {e.code}: {body[:200]}"
+            # prepaid credit used up (402, or 429/403 that talks about billing/credit): not a "busy" state, retrying is pointless
+            if e.code == 402 or (e.code in (403, 429) and re.search(r"credit|billing|prepa", body, re.I) and "retry in" not in body):
+                print(f"{m} HTTP {e.code} credit", flush=True)
+                return error_reply("credit", CREDIT_MSG), ""
             if e.code == 429:   # remember until quota resets; per-minute limits come back fast, daily ones in hours
                 t = re.search(r"retry in (?:(\d+)h)?(?:(\d+)m)?([\d.]+)s", body)
                 wait = (int(t[1] or 0) * 3600 + int(t[2] or 0) * 60 + float(t[3])) if t else 60
@@ -237,14 +313,13 @@ class H(BaseHTTPRequestHandler):
         self.send_header("transfer-encoding", "chunked")
         self.end_headers()
         out, err = first_ok(key, FAST, *args)
-        miss = missing_qualifiers(out)
-        if miss:   # one corrective retry: PLAIN must keep every meaning-bearing qualifier
+        fix = self_report_fix(out)
+        if fix:   # one corrective retry: PLAIN must keep every meaning-bearing qualifier and resolve double negation
             text, image, ctx = args
-            fix = f"{ctx}\nCORRECTION: your PLAIN dropped {', '.join(miss)}. Rewrite PLAIN keeping these words exactly."
-            again, _ = first_ok(key, FAST, text, image, fix)
-            if again and not missing_qualifiers(again):
-                out = again
-            print(f"qualifier retry {miss} -> {'fixed' if again and not missing_qualifiers(again) else 'still missing'}", flush=True)
+            again, _ = first_ok(key, FAST, text, image, f"{ctx}\nCORRECTION: {fix}")
+            ok = bool(again) and "KIND: self_report" in again and not self_report_fix(again)
+            if ok: out = again
+            print(f"self_report retry -> {'fixed' if ok else 'not fixed'}", flush=True)
         if out and "KIND: question" in out and "CONF: low" in out:
             self.chunk("CHECKING\n")                      # app shows "בודק שוב…"
             better, _ = first_ok(key, STRONG, *args, strong=True)
