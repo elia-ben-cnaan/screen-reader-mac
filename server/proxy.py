@@ -81,10 +81,18 @@ VISUAL: <yes if questions in this unit are shapes/matrices/graphs, else no>
 PASSAGE: <yes if this screen is a reading passage for following questions, else no>
 For SELF_REPORT (never suggest, rank or hint which option to choose — only clarify the meaning):
 KIND: self_report
-PLAIN: <the statement's real meaning as ONE short, simple Hebrew question. Resolve negation and double negation
-  logically (e.g. "לא נכון לומר שמעולם לא..." -> ask the positive meaning). Keep every qualifier that changes meaning:
-  לא, מעולם, אף פעם, אי פעם, תמיד, בדרך כלל, לעיתים, לפעמים, רק, ללא פיקוח, בלי רשות. For frequency wording ask
-  "באיזו תדירות ...?" ; for agreement wording ask "עד כמה ...?" or "האם ...?">
+PLAIN: <the real meaning in very simple everyday Hebrew, as short as possible (aim for ~10 words, up to 15 when needed),
+  in the form that fits the on-screen options so the reader can answer it directly:
+  - agreement scale (מסכים / לא מסכים...) or true-for-me (נכון לגביי / לא נכון לגביי) -> a first-person STATEMENT,
+    e.g. "אני מקפיד על כללים גם בלי פיקוח" or "קרה שהצגתי מצב מחמיא מדי";
+  - frequency scale (אף פעם ... תמיד) -> "באיזו תדירות ...?";
+  - yes/no -> "האם ...?".
+  Resolve negation and double negation logically ("לא נכון לומר שמעולם לא היה מצב שבו X" -> "קרה ש..." / "יש מצבים ש...").
+  Shorten only the wording, never the content: keep every condition, reason, comparison and object of the original
+  (e.g. "גם במצב לא נוח", "לצורך אישי", "במקום להציג כעובדה", "כי חשבתי שאינו חשוב", "קטן", "שאינו שלי", "בלי לבדוק אם מותר"),
+  keep "קרה ש" / "יש מצבים ש" when the original says it, and keep the person (I / you) consistent with the options. Keep every qualifier word
+  that changes meaning: לא, מעולם, אף פעם, אי פעם, תמיד, בדרך כלל, לעיתים, לפעמים, רק, ללא, בלי.>
+KEY: <the one word in PLAIN that most changes its meaning (e.g. תמיד / לפעמים / בלי / ללא / לא / רק), or "-">
 OPTIONS: <every response option visible on screen, exactly as written, in on-screen order, separated by " | ">
 NEG: <yes if the original wording contains a negation, else no>
 QUALIFIERS: <meaning-bearing words from the STATEMENT itself (not from the answer options) that must survive in PLAIN:
