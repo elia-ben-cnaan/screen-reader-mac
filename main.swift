@@ -419,7 +419,7 @@ func refreshWindowList() async {
     var hasChosenSource: Bool { UserDefaults.standard.string(forKey: "source") != nil }
     var onFloat: (() -> Void)?
     var picker: RegionPicker?
-    private var timer: Timer?, busy = false, ticks = 0, lastRaw = "", capMs = 0, ocrMs = 0, lastPrint: [UInt8] = [], lastText = "", lastImage: CGImage?
+    private var timer: Timer?, busy = false, ticks = 0, lastRaw = "", candText = "", candRaw = "", capMs = 0, ocrMs = 0, lastPrint: [UInt8] = [], lastText = "", lastImage: CGImage?
 
     init() {
         if let d = try? Data(contentsOf: sessionURL), let s = try? JSONDecoder().decode(Session.self, from: d), s.end == nil, !s.units.isEmpty {
@@ -521,9 +521,13 @@ func refreshWindowList() async {
                 let stable = text.replacingOccurrences(of: #"\b\d{1,2}:\d{2}(:\d{2})?\b"#, with: "", options: .regularExpression)
                 // clock ticking or OCR noise on the same screen != new screen; but a question that differs only by
                 // one word or by a time in its text (16:25 -> 15:25) is new
+                // A change must be seen on two reads in a row before it counts: OCR noise and page transitions differ
+                // from read to read, a real new question stays the same.
                 if !text.isEmpty, similarity(stable, lastText) < 0.97 || timesMoved(lastRaw, text) {
-                    lastText = stable; lastRaw = text; handle(img, text)
-                }
+                    if similarity(stable, candText) >= 0.97 && !timesMoved(candRaw, text) {
+                        lastText = stable; lastRaw = text; candText = ""; candRaw = ""; handle(img, text)
+                    } else { candText = stable; candRaw = text; lastPrint = [] }   // re-read next tick even if pixels settle
+                } else { candText = ""; candRaw = "" }
             } catch {
                 status = error.localizedDescription; failed = true; capFail = true      // e.g. chosen window closed; keep trying
             }
@@ -640,12 +644,15 @@ struct AnswerBlock: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             if showTag, !tag.isEmpty { Text(tag).font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary).lineLimit(1) }
+            // Biggest: which option to pick ("תשובה ב" / "הקלד: 42"). Under it, smaller: what that option says.
             HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Text(item.answer.isEmpty ? item.label : item.answer).font(.system(size: big, weight: .semibold)).lineLimit(2).minimumScaleFactor(0.5)
-                if item.low { Text("לבדוק").font(.system(size: big * 0.55, weight: .semibold)).foregroundStyle(.orange).help("המודל לא בטוח — כדאי לבדוק") }
+                let head = item.prompt ?? (item.label.isEmpty ? item.answer : "תשובה \(item.label)")
+                Text(head).font(.system(size: big, weight: .bold)).foregroundStyle(Color.accentColor).lineLimit(2).minimumScaleFactor(0.4)
+                if item.low { Text("לבדוק").font(.system(size: big * 0.45, weight: .semibold)).foregroundStyle(.orange).help("המודל לא בטוח — כדאי לבדוק") }
             }
-            if let p = item.prompt, !item.label.isEmpty { Text(p).font(.system(size: big * 0.34, weight: .semibold)).foregroundStyle(Color.accentColor).lineLimit(2).minimumScaleFactor(0.5) }
-            else if !item.label.isEmpty { Text("תשובה \(item.label)").font(.system(size: big * 0.34, weight: .semibold)).foregroundStyle(Color.accentColor) }
+            if !item.label.isEmpty, !item.answer.isEmpty, item.answer != item.label {
+                Text(item.answer).font(.system(size: big * 0.42, weight: .medium)).lineLimit(2).minimumScaleFactor(0.5)
+            }
             if showWhy, !item.why.isEmpty { Text(item.why).font(.system(size: 12)).foregroundStyle(.secondary).padding(.top, 6) }
             if let t = item.trap { Text("⚠ מלכודת: \(t)").font(.system(size: showWhy ? 12 : 11)).foregroundStyle(.orange).lineLimit(showWhy ? 3 : 2).padding(.top, showWhy ? 2 : 0) }
         }
@@ -764,13 +771,15 @@ struct Center: View {
                     Text("\(u.num.isEmpty ? "" : "יחידה \(u.num) · ")\(u.title)\(m.current?.num.isEmpty == false ? " · שאלה \(m.current!.num)" : "")")
                         .font(.system(size: 12, weight: .medium)).foregroundStyle(Color.accentColor)
                 }
-                Text(m.thinking ? m.pending : (m.current?.question ?? "")).font(.system(size: 15)).lineLimit(3).padding(.top, 10)
-                Group {
-                    if m.thinking { Text("• • •").font(answerFont).foregroundStyle(.tertiary) }
-                    else if let it = m.current { AnswerBlock(item: it) }
-                    else if !m.status.isEmpty && m.strip == nil { Text(m.status).font(.system(size: 20, weight: .semibold)).foregroundStyle(.secondary) }   // errors / waiting: readable, not a footnote
-                }.padding(.top, 20)
-                Spacer()
+                Text(m.thinking ? "שאלה חדשה…" : (m.current?.question ?? "")).font(.system(size: 13)).foregroundStyle(.secondary).lineLimit(2).padding(.top, 8)
+                GeometryReader { g in
+                    let big = max(40, min(96, g.size.width / 8))   // grows with the window
+                    VStack(alignment: .leading) {
+                        if m.thinking { Text("• • •").font(.system(size: big, weight: .bold)).foregroundStyle(.tertiary) }
+                        else if let it = m.current { AnswerBlock(item: it, big: big) }
+                        else if !m.status.isEmpty && m.strip == nil { Text(m.status).font(.system(size: 20, weight: .semibold)).foregroundStyle(.secondary) }   // errors / waiting: readable, not a footnote
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                }.padding(.top, 14)
             }
             if (!m.status.isEmpty || (m.showTech && !m.timing.isEmpty)) && !m.needsPermission {
                 HStack { Text(m.status).font(.system(size: 11)).foregroundStyle(.secondary); Spacer()
