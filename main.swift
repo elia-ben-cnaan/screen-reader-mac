@@ -387,7 +387,7 @@ func refreshWindowList() async {
     @Published var current: Item?
     @Published var instructions: Unit?          // last screen was a unit intro
     // SELF_REPORT screen: plain meaning + the options on screen. Shown only; never recorded, never suggests an option.
-    struct SelfReport { var plain: String; var options: [String]; var neg: Bool; var keys: [String] = []; var same = false; var ask = ""; var meanings: [String] = [] }   // keys = words of plain shown in bold; same = plain is the statement as written
+    struct SelfReport { var plain: String; var options: [String]; var neg: Bool; var keys: [String] = []; var same = false; var ask = ""; var meanings: [String] = []; var distinction = "" }   // keys = words of plain shown in bold; same = plain is the statement as written
     @Published var selfReport: SelfReport?
     @Published var timing = ""                   // capture · OCR · server ms of the last screen
     @Published var status = ""                  // waiting / thinking / errors
@@ -618,7 +618,8 @@ func refreshWindowList() async {
                                         neg: r["NEG"].lowercased() == "yes",
                                         keys: r["KEY"].components(separatedBy: "|").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty },
                                         same: r["SAME"].lowercased() == "yes", ask: r["ASK"],
-                                        meanings: r["MEANINGS"].components(separatedBy: "|").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })
+                                        meanings: r["MEANINGS"].components(separatedBy: "|").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty },
+                                        distinction: r["DISTINCTION"])
                 current = nil; instructions = nil; status = ""
             }
         case "other":
@@ -847,6 +848,7 @@ struct SelfReportCard: View {
             if big { Label("שאלון אישי · אין תשובה נכונה", systemImage: "person.text.rectangle").font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary) }
             // One glance: WHAT it is about (big), HOW to answer (small), the options on one quiet line.
             Text(styled).font(.system(size: size, weight: .semibold)).lineSpacing(big ? 6 : 2).fixedSize(horizontal: false, vertical: true)
+            if !sr.distinction.isEmpty { Text(sr.distinction).font(.system(size: big ? 14 : 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }   // wording note only
             if sr.meanings.count == sr.options.count && !sr.options.isEmpty {
                 // Every option translated into what it says about this statement — all the same way, none marked.
                 VStack(alignment: .leading, spacing: big ? 6 : 3) {

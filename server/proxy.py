@@ -158,6 +158,10 @@ MEANINGS: <for EVERY option on screen, in the same order as OPTIONS, what the re
   "אני תמיד מקפיד, גם כשאף אחד לא בודק | בדרך כלל אני מקפיד | לפעמים כן, לפעמים לא | לרוב אני לא מקפיד כשאין פיקוח |
   אני לא מקפיד כשאין פיקוח"; for frequency "ייפיתי מצב...": "זה לא קרה לי | קרה פעם-פעמיים | קורה מדי פעם | קורה לי הרבה |
   אני עושה את זה כל פעם".>
+DISTINCTION: <only when the wording makes a material distinction a reader could easily miss — reporting vs. correcting,
+  "בלי רשות" vs. "בלי לבדוק אם מותר", once vs. often, an opinion vs. own behaviour, a condition or exception — one short
+  neutral Hebrew note, max 12 words, starting "שים לב: " (e.g. "שים לב: מדובר בדיווח, לא בתיקון"). It explains the
+  wording only: never what to answer, never which option is better or expected. Otherwise "-".>
 ASK: <HOW to answer, matching the on-screen options, exactly one of: "עד כמה אתה מסכים?" (agreement scale),
   "כמה פעמים זה קרה / קורה לך?" (frequency), "כן או לא?" (yes/no), "זה נכון לגביך?" (true / not true for me)>
 OPTIONS: <every response option visible on screen, exactly as written, in on-screen order, separated by " | ">
@@ -238,7 +242,10 @@ def tidy(out):
         opts = [x.strip() for x in f.get("OPTIONS", "").split("|") if x.strip()]
         if len(mean) != len(opts) or not all(mean) or any(w in f.get("MEANINGS", "") for w in ("מומלץ", "רצוי", "עדיף", "התשובה הנכונה")):
             f.pop("MEANINGS", None)
-        return "\n".join(f"{k}: {f[k]}" for k in ("KIND", "PLAIN", "KEY", "OPTIONS", "MEANINGS", "ASK", "NEG", "QUALIFIERS") if k in f)
+        d = f.get("DISTINCTION", "").strip()
+        if not d.startswith("שים לב") or len(d.split()) > 16 or any(w in d for w in ("מומלץ", "רצוי", "עדיף", "כדאי לענות", "התשובה")):
+            f.pop("DISTINCTION", None)                          # only a short neutral wording note survives
+        return "\n".join(f"{k}: {f[k]}" for k in ("KIND", "PLAIN", "KEY", "DISTINCTION", "OPTIONS", "MEANINGS", "ASK", "NEG", "QUALIFIERS") if k in f)
     if f.get("KIND", "").lower() != "question":
         return "\n".join(lines)   # instructions / other pass through
     f["KIND"] = "question"
