@@ -7,7 +7,10 @@ Response: text/plain lines (format in PROMPT). If the fast model is unsure, a st
 "CHECKING" is sent first so the app can show it.
 Config (/root/.config/screenreader/): llm_key (Gemini API key), client_token (shared with the app).
 """
-import json, os, re, threading, time, urllib.request, urllib.error
+import hashlib, json, os, re, threading, time, urllib.request, urllib.error
+MAX_BODY = 15 * 1024 * 1024       # a screenshot is ~1-3 MB; anything bigger is rejected before reading
+RATE_PER_MIN = 40                 # per address
+hits, cache = {}, {}              # address -> recent request times; screen hash -> reply (last 500)
 blocked = {}   # model -> unix time its quota frees up (from Google's "retry in ...")
 # Spend guard: every model call is counted per day; past DAILY_MAX the server answers "limit" instead of calling
 # the paid model (a leaked token or a runaway test cannot drain the prepaid credit). 0 = no cap.
@@ -375,13 +378,16 @@ class H(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     def do_GET(self):
-        if self.path.split("?")[0] in ("/sim", "/sim/"):   # test simulator page (answers stay in key.json, not served)
-            b = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "test", "sim5", "index.html"), "rb").read()
-            self.send_response(200); self.send_header("content-type", "text/html; charset=utf-8")
-            self.send_header("content-length", str(len(b))); self.end_headers(); return self.wfile.write(b)
         self.reply(200, "ok" if read("llm_key") else "no key")
 
     def do_POST(self):
+        ip = self.client_address[0]
+        now = time.time()
+        hits[ip] = [t for t in hits.get(ip, []) if now - t < 60] + [now]
+        if len(hits[ip]) > RATE_PER_MIN:                       # one person practising sends a few screens a minute
+            return self.reply(429, "too many requests")
+        if int(self.headers.get("content-length", 0) or 0) > MAX_BODY:
+            return self.reply(413, "request too large")
         token = read("client_token")
         if self.path != "/ask" or not token or self.headers.get("X-Token") != token:
             return self.reply(403, "forbidden")
@@ -395,6 +401,9 @@ class H(BaseHTTPRequestHandler):
         if not isinstance(q, dict):
             return self.reply(400, "bad json")
         args = (q.get("text", ""), q.get("image"), q.get("context", ""))
+        ck = hashlib.sha256(json.dumps([args, bool(q.get("visual"))], ensure_ascii=False).encode()).hexdigest()
+        if ck in cache:                                        # same screen again (refresh, back, re-read): no new model call
+            return self.reply(200, cache[ck])
         self.send_response(200)
         self.send_header("content-type", "text/plain; charset=utf-8")
         self.send_header("transfer-encoding", "chunked")
@@ -408,6 +417,9 @@ class H(BaseHTTPRequestHandler):
             if ok: out = again
             print(f"self_report retry -> {'fixed' if ok else 'not fixed'}", flush=True)
         out = mark_same(out, args[0] if isinstance(args[0], str) else "")
+        if out and "KIND:" in out:
+            cache[ck] = out
+            while len(cache) > 500: cache.pop(next(iter(cache)))
         self.chunk(out or err)
         self.wfile.write(b"0\r\n\r\n"); self.wfile.flush()
 
