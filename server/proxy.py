@@ -143,6 +143,13 @@ PLAIN: <WHAT it is about: the core content as a very short, everyday Hebrew phra
   Examples: "קרה שהצגתי מצב בצורה טובה יותר ממה שהיה באמת כדי להימנע מביקורת" -> "ייפיתי מצב כדי לא לקבל ביקורת";
   "באיזו תדירות נכון לומר שאני מקפיד על כללים גם כשאף אחד אינו בודק אותי?" -> "מקפיד על כללים גם בלי פיקוח";
   "לדעתך מתנה קטנה מלקוח אינה בעייתית" -> "מתנה קטנה מלקוח זה בסדר (לדעתי)".>
+MEANINGS: <for EVERY option on screen, in the same order as OPTIONS, what the reader says about THIS statement if they pick
+  it — a short plain first-person line (3-8 words), separated by " | ". Translate every option the same neutral way; never
+  mark, rank, praise or warn about any option; no words like "נכון", "רצוי", "מומלץ", "בעייתי". For a resolved double
+  negation translate against the positive content (מסכים -> "כן, זה קרה לי"). Examples for "מקפיד על כללים גם בלי פיקוח":
+  "אני תמיד מקפיד, גם כשאף אחד לא בודק | בדרך כלל אני מקפיד | לפעמים כן, לפעמים לא | לרוב אני לא מקפיד כשאין פיקוח |
+  אני לא מקפיד כשאין פיקוח"; for frequency "ייפיתי מצב...": "זה לא קרה לי | קרה פעם-פעמיים | קורה מדי פעם | קורה לי הרבה |
+  אני עושה את זה כל פעם".>
 ASK: <HOW to answer, matching the on-screen options, exactly one of: "עד כמה אתה מסכים?" (agreement scale),
   "כמה פעמים זה קרה / קורה לך?" (frequency), "כן או לא?" (yes/no), "זה נכון לגביך?" (true / not true for me)>
 OPTIONS: <every response option visible on screen, exactly as written, in on-screen order, separated by " | ">
@@ -217,7 +224,13 @@ def tidy(out):
     if f.get("KIND", "").lower() == "self_report":   # only the meaning and the on-screen options ever leave the server
         f["KIND"] = "self_report"
         f["KEY"] = " | ".join(key_words(f.get("PLAIN", ""))) or "-"   # the app shows these words in bold
-        return "\n".join(f"{k}: {f[k]}" for k in ("KIND", "PLAIN", "KEY", "OPTIONS", "NEG", "QUALIFIERS") if k in f)
+        # MEANINGS = what each option says about this statement. Kept only if there is one per option and none of them
+        # evaluates an option (the reader chooses; the app only translates).
+        mean = [x.strip() for x in f.get("MEANINGS", "").split("|")]
+        opts = [x.strip() for x in f.get("OPTIONS", "").split("|") if x.strip()]
+        if len(mean) != len(opts) or not all(mean) or any(w in f.get("MEANINGS", "") for w in ("מומלץ", "רצוי", "עדיף", "התשובה הנכונה")):
+            f.pop("MEANINGS", None)
+        return "\n".join(f"{k}: {f[k]}" for k in ("KIND", "PLAIN", "KEY", "OPTIONS", "MEANINGS", "ASK", "NEG", "QUALIFIERS") if k in f)
     if f.get("KIND", "").lower() != "question":
         return "\n".join(lines)   # instructions / other pass through
     f["KIND"] = "question"
