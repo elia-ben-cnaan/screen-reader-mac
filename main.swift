@@ -563,7 +563,6 @@ func refreshWindowList() async {
         let t0 = Date()
         pending = text.split(whereSeparator: \.isNewline).prefix(2).joined(separator: " ")
         thinking = true; thinkStart = Date(); status = "חושב…"; inflight += 1; failed = false
-        _ = synth.stopSpeaking(at: .immediate)                    // a new screen: stop reading the previous statement
         Task {
             // Busy/quota/network: retry up to 3 times (2s, 5s, 10s) before giving up on this screen.
             var r: (mode: String, answer: String, cached: Bool)?
