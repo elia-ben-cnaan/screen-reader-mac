@@ -400,6 +400,7 @@ func refreshWindowList() async {
     @Published var needsPermission = false
     @Published var manual = UserDefaults.standard.bool(forKey: "manual") { didSet { UserDefaults.standard.set(manual, forKey: "manual") } }   // answer only on ↻ / ⌥⌘R
     @Published var thinkStart = Date()
+    @Published var miniWidth = max(260, UserDefaults.standard.double(forKey: "miniWidth")) { didSet { UserDefaults.standard.set(miniWidth, forKey: "miniWidth") } }   // floating card width, A− / A+
     @Published var showList = UserDefaults.standard.bool(forKey: "showList") { didSet { UserDefaults.standard.set(showList, forKey: "showList") } }
     // Technical line (capture / OCR / server ms): hidden unless switched on from the menu.
     @Published var showTech = UserDefaults.standard.bool(forKey: "showTech") { didSet { UserDefaults.standard.set(showTech, forKey: "showTech") } }
@@ -463,8 +464,24 @@ func refreshWindowList() async {
     }
 
     // ⌥⌘S
+    // Every start first asks what to read (so a forgotten region never silently reads the wrong place).
+    @Published var askSource = false
+    var onShowMain: (() -> Void)?
     func startStop() {
-        if phase == .idle { start() } else { finish() }
+        if phase == .idle { loadWindows(); onShowMain?(); askSource = true } else { finish() }
+    }
+    func startWith(_ s: Source?) {          // nil = keep the current source
+        askSource = false
+        if let s { setSource(s) }
+        start()
+    }
+    func pickRegionThenStart() {
+        askSource = false
+        picker = RegionPicker { [weak self] r in
+            if let r { self?.setSource(.region(r)); self?.start() }
+            self?.picker = nil
+        }
+        picker?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
     }
     func start() {
         guard CGPreflightScreenCaptureAccess() else { CGRequestScreenCaptureAccess(); needsPermission = true; return }
@@ -730,6 +747,7 @@ struct MainView: View {
         .frame(minWidth: m.showList ? 560 : 320, minHeight: 300)
         .environment(\.layoutDirection, .rightToLeft)
         .sheet(isPresented: $m.showSummary) { SummaryView(m: m) }
+        .sheet(isPresented: $m.askSource) { SourceAsk(m: m) }
         .onAppear { m.loadWindows() }
     }
 }
@@ -899,9 +917,12 @@ struct MiniView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
+                Button(action: onExpand) { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).foregroundStyle(.secondary).help("סגור את החלון הצף (⌥⌘M)")
                 Circle().fill(m.phase == .running ? .red : .orange).frame(width: 6, height: 6)
                 Text(miniTitle).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
                 Spacer()
+                Button { m.miniWidth = max(220, m.miniWidth - 60) } label: { Text("A−").font(.system(size: 11, weight: .semibold)) }.buttonStyle(.plain).foregroundStyle(.secondary).help("הקטן")
+                Button { m.miniWidth = min(600, m.miniWidth + 60) } label: { Text("A+").font(.system(size: 13, weight: .semibold)) }.buttonStyle(.plain).foregroundStyle(.secondary).help("הגדל")
                 Button { m.askAgain() } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.plain).foregroundStyle(.secondary).help("קרא את המסך עכשיו (⌥⌘R)")
                 Button { m.speak.toggle() } label: { Image(systemName: m.speak ? "speaker.wave.2.fill" : "speaker.slash") }.buttonStyle(.plain).foregroundStyle(.secondary).help(m.speak ? "הקראה בקול פועלת — לחץ לכיבוי" : "הקראה בקול כבויה — לחץ להפעלה")
                 Button(action: onExpand) { Image(systemName: "arrow.up.left.and.arrow.down.right") }.buttonStyle(.plain).foregroundStyle(.secondary).help("חלון מלא (⌥⌘M)")
@@ -913,13 +934,43 @@ struct MiniView: View {
             else if let it = m.current { AnswerBlock(item: it, big: 28, showWhy: false, showTag: true) }
             else if m.strip == nil { Text(m.status.isEmpty ? "מוכן" : m.status).font(.system(size: 13)).foregroundStyle(.secondary) }
         }
-        .padding(12).frame(width: m.selfReport != nil && !m.thinking ? 320 : 220, alignment: .leading)   // a statement needs room: wider card on questionnaire screens
+        .padding(12).frame(width: m.miniWidth, alignment: .leading).fixedSize(horizontal: false, vertical: true)   // the whole card always fits
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
         .environment(\.layoutDirection, .rightToLeft)
     }
     var miniTitle: String {
         let u = m.unit.map { "\($0.num.isEmpty ? "" : "יחידה \($0.num) · ")\($0.title)" } ?? m.sourceLabel
         return u   // the question number sits next to the answer itself (AnswerBlock tag)
+    }
+}
+
+// Shown on every התחל: what should the app read?
+struct SourceAsk: View {
+    @ObservedObject var m: Model
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("מה לקרוא?").font(.system(size: 20, weight: .semibold))
+            if UserDefaults.standard.string(forKey: "source") != nil {
+                Button { m.startWith(nil) } label: { Label("כמו בפעם הקודמת: \(m.sourceLabel)", systemImage: "arrow.uturn.backward") }
+                    .buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
+            }
+            Button { m.pickRegionThenStart() } label: { Label("סמן אזור חדש…", systemImage: "rectangle.dashed") }
+            Button { m.startWith(.screen) } label: { Label("כל המסך", systemImage: "display") }
+            if !m.windows.isEmpty {
+                Text("חלון מסוים").font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary).padding(.top, 4)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(Array(m.windows.enumerated()), id: \.offset) { _, w in
+                            Button { m.startWith(.window(bundleID: w.bundleID, windowID: w.windowID, name: w.name)) } label: { Label(w.name, systemImage: "macwindow") }.buttonStyle(.plain)
+                        }
+                    }
+                }.frame(maxHeight: 180)
+            }
+            HStack { Spacer(); Button("ביטול") { m.askSource = false }.keyboardShortcut(.cancelAction) }
+        }
+        .padding(20).frame(width: 420)
+        .environment(\.layoutDirection, .rightToLeft)
+        .onAppear { m.loadWindows() }
     }
 }
 
@@ -1014,12 +1065,18 @@ nonisolated(unsafe) var hotkeyRefs: [EventHotKeyRef?] = []
         panel.level = .floating; panel.isFloatingPanel = true; panel.isMovableByWindowBackground = true
         panel.backgroundColor = .clear; panel.isOpaque = false; panel.hasShadow = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]   // floats over a full-screen simulator
-        let host = NSHostingView(rootView: MiniView(m: m, onExpand: { [weak self] in self?.toggleFloat() }))
-        host.sizingOptions = [.intrinsicContentSize]
-        panel.contentView = host
+        // The panel follows the card's size (a statement with 5 options is taller), so nothing is cut off.
+        let host = NSHostingController(rootView: MiniView(m: m, onExpand: { [weak self] in self?.toggleFloat() }))
+        host.sizingOptions = [.preferredContentSize]
+        panel.contentViewController = host
         panel.setFrameAutosaveName("mini")
         if panel.frame.origin == .zero, let v = NSScreen.main?.visibleFrame { panel.setFrameTopLeftPoint(NSPoint(x: v.minX + 20, y: v.maxY - 20)) }
         m.onFloat = { [weak self] in self?.toggleFloat() }
+        m.onShowMain = { [weak self] in   // the source question is asked in the main window
+            guard let self else { return }
+            if self.panel.isVisible { self.panel.orderOut(nil) }
+            self.window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+        }
 
         registerHotkeys([
             (kVK_ANSI_S, { [weak self] in self?.m.startStop() }),
