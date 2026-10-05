@@ -5,7 +5,6 @@ import SwiftUI
 import Carbon.HIToolbox
 import Vision
 import ScreenCaptureKit
-import AVFoundation
 
 let interval: TimeInterval = 1.0          // seconds between capture checks (the check is local and cheap)
 let changeThreshold: Double = 0.0015      // share of fingerprint cells that changed visibly = "new screen"
@@ -404,22 +403,6 @@ func refreshWindowList() async {
     @Published var showList = UserDefaults.standard.bool(forKey: "showList") { didSet { UserDefaults.standard.set(showList, forKey: "showList") } }
     // Technical line (capture / OCR / server ms): hidden unless switched on from the menu.
     @Published var showTech = UserDefaults.standard.bool(forKey: "showTech") { didSet { UserDefaults.standard.set(showTech, forKey: "showTech") } }
-    // Read the plain meaning of a SELF_REPORT statement aloud (local macOS voice, no network). Off = never speaks.
-    @Published var speak = UserDefaults.standard.bool(forKey: "speak") {
-        didSet {
-            UserDefaults.standard.set(speak, forKey: "speak")
-            if speak, let sr = selfReport { say(sr.plain) } else { _ = synth.stopSpeaking(at: .immediate) }
-        }
-    }
-    private let synth = AVSpeechSynthesizer()
-    func say(_ s: String) {
-        _ = synth.stopSpeaking(at: .immediate)
-        guard speak, !s.isEmpty else { return }
-        let u = AVSpeechUtterance(string: s)
-        u.voice = AVSpeechSynthesisVoice(language: "he-IL")
-        u.rate = AVSpeechUtteranceDefaultSpeechRate * 0.9
-        synth.speak(u)
-    }
     // Something went wrong (no server, credit, window closed): the cards show a red strip. Orange = re-checking / retrying.
     @Published var failed = false
     private var capFail = false
@@ -638,7 +621,6 @@ func refreshWindowList() async {
                                         same: r["SAME"].lowercased() == "yes", ask: r["ASK"],
                                         meanings: r["MEANINGS"].components(separatedBy: "|").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })
                 current = nil; instructions = nil; status = ""
-                say(r["PLAIN"])                                        // only when the speaker button is on
             }
         case "other":
             if latest { status = "ממתין לשאלה"; selfReport = nil }      // the statement is no longer on screen
@@ -726,7 +708,6 @@ struct MainView: View {
                 Button { m.askAgain() } label: { Label(m.manual ? "הבא" : "", systemImage: "arrow.clockwise") }.help("קרא את המסך עכשיו (⌥⌘R)")
                 Button { m.step(-1) } label: { Image(systemName: "chevron.right") }.help("שאלה קודמת")
                 Button { m.step(1) } label: { Image(systemName: "chevron.left") }.help("שאלה הבאה")
-                Button { m.speak.toggle() } label: { Image(systemName: m.speak ? "speaker.wave.2.fill" : "speaker.slash") }.help(m.speak ? "הקראה בקול פועלת (שאלון אישי) — לחץ לכיבוי" : "הקראה בקול כבויה — לחץ להפעלה")
                 Button { m.showList.toggle() } label: { Image(systemName: "sidebar.right") }.help("רשימת השאלות (⌥⌘L)")
                 Button { m.newSession() } label: { Image(systemName: "arrow.counterclockwise") }.help("סשן חדש: איפוס (הקודם נשמר)")
                 Button { m.onFloat?() } label: { Image(systemName: "pip.enter") }.help("חלון צף (⌥⌘M)")
@@ -924,7 +905,6 @@ struct MiniView: View {
                 Button { m.miniWidth = max(220, m.miniWidth - 60) } label: { Text("A−").font(.system(size: 11, weight: .semibold)) }.buttonStyle(.plain).foregroundStyle(.secondary).help("הקטן")
                 Button { m.miniWidth = min(600, m.miniWidth + 60) } label: { Text("A+").font(.system(size: 13, weight: .semibold)) }.buttonStyle(.plain).foregroundStyle(.secondary).help("הגדל")
                 Button { m.askAgain() } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.plain).foregroundStyle(.secondary).help("קרא את המסך עכשיו (⌥⌘R)")
-                Button { m.speak.toggle() } label: { Image(systemName: m.speak ? "speaker.wave.2.fill" : "speaker.slash") }.buttonStyle(.plain).foregroundStyle(.secondary).help(m.speak ? "הקראה בקול פועלת — לחץ לכיבוי" : "הקראה בקול כבויה — לחץ להפעלה")
                 Button(action: onExpand) { Image(systemName: "arrow.up.left.and.arrow.down.right") }.buttonStyle(.plain).foregroundStyle(.secondary).help("חלון מלא (⌥⌘M)")
             }
             if m.strip != nil { StatusStrip(m: m, size: 13) }
@@ -1102,7 +1082,7 @@ nonisolated(unsafe) var hotkeyRefs: [EventHotKeyRef?] = []
         let sItem = NSMenuItem(); main.addItem(sItem)
         let sm = NSMenu(title: "סשן"); sItem.submenu = sm
         for (t, sel, k) in [("התחל / סיים  ⌥⌘S", #selector(mStart), ""), ("השהה / המשך  ⌥⌘P", #selector(mPause), ""),
-                            ("קרא עכשיו  ⌥⌘R", #selector(mAgain), ""), ("חלון צף  ⌥⌘M", #selector(mFloat), ""), ("סיכום", #selector(mSummary), ""), ("הקראה בקול (שאלון אישי)", #selector(mSpeak), ""), ("מידע טכני (זמנים)", #selector(mTech), ""),
+                            ("קרא עכשיו  ⌥⌘R", #selector(mAgain), ""), ("חלון צף  ⌥⌘M", #selector(mFloat), ""), ("סיכום", #selector(mSummary), ""), ("מידע טכני (זמנים)", #selector(mTech), ""),
                             ("סשן חדש (איפוס)", #selector(mNew), "n"), ("פתח סשנים קודמים", #selector(mFolder), "")] {
             let i = NSMenuItem(title: t, action: sel, keyEquivalent: k); i.target = self; sm.addItem(i)
         }
@@ -1120,7 +1100,6 @@ nonisolated(unsafe) var hotkeyRefs: [EventHotKeyRef?] = []
     @objc func mAgain() { m.askAgain() }
     @objc func mFloat() { toggleFloat() }
     @objc func mNew() { m.newSession() }
-    @objc func mSpeak() { m.speak.toggle() }
     @objc func mTech() { m.showTech.toggle() }
     @objc func mFolder() { NSWorkspace.shared.open(sessionsDir) }
     @objc func mSummary() { if m.session != nil { window.makeKeyAndOrderFront(nil); m.showSummary = true } }
