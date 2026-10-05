@@ -10,7 +10,7 @@ Config (/root/.config/screenreader/): llm_key (Gemini API key), client_token (sh
 import hashlib, json, os, re, threading, time, urllib.request, urllib.error
 MAX_BODY = 15 * 1024 * 1024       # a screenshot is ~1-3 MB; anything bigger is rejected before reading
 RATE_PER_MIN = 40                 # per address
-hits, cache = {}, {}              # address -> recent request times; screen hash -> reply (last 500)
+hits = {}                         # address -> recent request times (no answer cache: ⟳ must always think again)
 blocked = {}   # model -> unix time its quota frees up (from Google's "retry in ...")
 # Spend guard: every model call is counted per day; past DAILY_MAX the server answers "limit" instead of calling
 # the paid model (a leaked token or a runaway test cannot drain the prepaid credit). 0 = no cap.
@@ -316,25 +316,39 @@ def ask_for(opts):
 
 
 VOTERS = os.environ.get("SR_VOTERS", "gemini-pro-latest,gemini-3.8-flash,gemini-flash-latest").split(",")
+BACKUP_VOTERS = os.environ.get("SR_BACKUP_VOTERS", "gemini-3.7-flash,gemini-3.6-flash,gemini-flash-lite-latest").split(",")
 def vote(key, args):
-    """Questions with drawings (shapes, rotations, cubes, matrices): three models answer in parallel; the majority wins.
-    No majority -> the strongest model's reply, marked CONF: low so the app shows "לבדוק". Not a question -> first reply."""
+    """Three models answer in parallel. First the majority decides the screen type (question / instructions / self_report /
+    other); then, for questions, the majority decides the answer. No majority on the answer -> the strongest model's reply,
+    marked CONF: low so the app shows "לבדוק". A voter that is over quota is replaced by a backup model."""
     from concurrent.futures import ThreadPoolExecutor
+    pool = [m for m in VOTERS + BACKUP_VOTERS if blocked.get(m, 0) <= time.time()][:len(VOTERS)]
     def one(m):
         try: return tidy(gemini(key, m, *args, strong=True))
+        except urllib.error.HTTPError as e:
+            body = e.read().decode()
+            if e.code == 429:   # remember the quota reset (Pro on this tier: 250 requests/day)
+                t = re.search(r"retry in (?:(\d+)h)?(?:(\d+)m)?([\d.]+)s", body)
+                blocked[m] = time.time() + ((int(t[1] or 0) * 3600 + int(t[2] or 0) * 60 + float(t[3])) if t else 60)
+            print(f"vote {m} HTTP {e.code}", flush=True); return ""
         except Exception as e:
             print(f"vote {m} {type(e).__name__}", flush=True); return ""
-    with ThreadPoolExecutor(len(VOTERS)) as ex: outs = list(ex.map(one, VOTERS))
+    with ThreadPoolExecutor(max(1, len(pool))) as ex: outs = list(ex.map(one, pool))
     got = [(o, {l.split(":", 1)[0].strip(): l.split(":", 1)[1].strip() for l in o.splitlines() if ":" in l}) for o in outs if "KIND:" in o]
     if not got: return first_ok(key, PRIMARY, *args, strong=True)
-    qs = [(o, f) for o, f in got if f.get("KIND", "").lower() == "question" and f.get("ANSWER")]
-    if not qs: return got[0][0], ""
+    kinds = [f.get("KIND", "").lower() for _, f in got]
+    kind = max(set(kinds), key=kinds.count) if kinds.count(max(set(kinds), key=kinds.count)) >= 2 else kinds[0]   # tie -> strongest
+    same = [(o, f) for o, f in got if f.get("KIND", "").lower() == kind]
+    if kind != "question":
+        return same[0][0], ""
+    qs = [(o, f) for o, f in same if f.get("ANSWER")]
+    if not qs: return same[0][0], ""
     labels = [f["ANSWER"] for _, f in qs]
     best = max(set(labels), key=labels.count)
-    print(f"vote {labels} -> {best if labels.count(best) >= 2 else 'no majority'}", flush=True)
+    print(f"vote {pool} kind={kind} {labels} -> {best if labels.count(best) >= 2 else 'no majority'}", flush=True)
     if labels.count(best) >= 2:
         return next(o for o, f in qs if f["ANSWER"] == best), ""
-    o = qs[0][0]   # VOTERS[0] (strongest) first in order
+    o = qs[0][0]   # strongest available first
     return re.sub(r"(?m)^CONF:.*$", "CONF: low", o) if "CONF:" in o else o + "\nCONF: low", ""
 
 
@@ -384,7 +398,7 @@ class H(BaseHTTPRequestHandler):
         ip = self.client_address[0]
         now = time.time()
         hits[ip] = [t for t in hits.get(ip, []) if now - t < 60] + [now]
-        if len(hits[ip]) > RATE_PER_MIN:                       # one person practising sends a few screens a minute
+        if len(hits[ip]) > RATE_PER_MIN and ip not in ("127.0.0.1", "::1"):   # local test runs are exempt                       # one person practising sends a few screens a minute
             return self.reply(429, "too many requests")
         if int(self.headers.get("content-length", 0) or 0) > MAX_BODY:
             return self.reply(413, "request too large")
@@ -401,14 +415,12 @@ class H(BaseHTTPRequestHandler):
         if not isinstance(q, dict):
             return self.reply(400, "bad json")
         args = (q.get("text", ""), q.get("image"), q.get("context", ""))
-        ck = hashlib.sha256(json.dumps([args, bool(q.get("visual"))], ensure_ascii=False).encode()).hexdigest()
-        if ck in cache:                                        # same screen again (refresh, back, re-read): no new model call
-            return self.reply(200, cache[ck])
         self.send_response(200)
         self.send_header("content-type", "text/plain; charset=utf-8")
         self.send_header("transfer-encoding", "chunked")
         self.end_headers()
-        out, err = vote(key, args) if q.get("visual") else first_ok(key, PRIMARY, *args, strong=True)
+        # Accuracy over cost (owner, 2026-10-05): every screen is answered by three models; majority wins, a split -> "לבדוק".
+        out, err = vote(key, args)
         fix = self_report_fix(out)
         if fix:   # one corrective retry: PLAIN must keep every meaning-bearing qualifier and resolve double negation
             text, image, ctx = args
@@ -417,9 +429,6 @@ class H(BaseHTTPRequestHandler):
             if ok: out = again
             print(f"self_report retry -> {'fixed' if ok else 'not fixed'}", flush=True)
         out = mark_same(out, args[0] if isinstance(args[0], str) else "")
-        if out and "KIND:" in out:
-            cache[ck] = out
-            while len(cache) > 500: cache.pop(next(iter(cache)))
         self.chunk(out or err)
         self.wfile.write(b"0\r\n\r\n"); self.wfile.flush()
 
