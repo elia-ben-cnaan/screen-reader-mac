@@ -222,7 +222,7 @@ func ask(_ text: String, _ png: Data?, _ context: String, _ onPartial: @escaping
     let c = serverConfig()
     guard let url = URL(string: c.url + "/ask"), !c.token.isEmpty else { return "No server configured (\(serverFile))." }
     var r = URLRequest(url: url)
-    r.httpMethod = "POST"; r.timeoutInterval = 60
+    r.httpMethod = "POST"; r.timeoutInterval = 150   // strongest model with full thinking can take a while
     r.setValue("application/json", forHTTPHeaderField: "content-type")
     r.setValue(c.token, forHTTPHeaderField: "X-Token")
     r.httpBody = try JSONSerialization.data(withJSONObject: ["text": text, "image": png?.base64EncodedString() as Any, "context": context])
@@ -658,14 +658,16 @@ struct AnswerBlock: View {
             if showTag, !tag.isEmpty { Text(tag).font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary).lineLimit(1) }
             // Biggest: which option to pick ("תשובה ב" / "הקלד: 42"). Under it, smaller: what that option says.
             HStack(alignment: .firstTextBaseline, spacing: 10) {
+                // Type scale (ratio ~1.3): level 1 = short label only; a long answer without a letter drops to level 2.
                 let head = item.prompt ?? (item.label.isEmpty ? item.answer : "תשובה \(item.label)")
-                Text(head).font(.system(size: big, weight: .bold)).foregroundStyle(Color.accentColor).lineLimit(2).minimumScaleFactor(0.4)
-                if item.low { Text("לבדוק").font(.system(size: big * 0.45, weight: .semibold)).foregroundStyle(.orange).help("המודל לא בטוח — כדאי לבדוק") }
+                let short = head.count <= 14
+                Text(head).font(.system(size: short ? big : big * 0.6, weight: .bold)).foregroundStyle(Color.accentColor).lineLimit(3).minimumScaleFactor(0.6)
+                if item.low { Text("לבדוק").font(.system(size: big * 0.4, weight: .semibold)).foregroundStyle(.orange).help("המודל לא בטוח — כדאי לבדוק") }
             }
             if !item.label.isEmpty, !item.answer.isEmpty, item.answer != item.label {
-                Text(item.answer).font(.system(size: big * 0.42, weight: .medium)).lineLimit(2).minimumScaleFactor(0.5)
+                Text(item.answer).font(.system(size: big * 0.6, weight: .medium)).lineLimit(2).minimumScaleFactor(0.6)   // level 2
             }
-            if showWhy, !item.why.isEmpty { Text(item.why).font(.system(size: 12)).foregroundStyle(.secondary).padding(.top, 6) }
+            if showWhy, !item.why.isEmpty { Text(item.why).font(.system(size: 15)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).padding(.top, 6) }   // level 3
             if let t = item.trap { Text("⚠ מלכודת: \(t)").font(.system(size: showWhy ? 12 : 11)).foregroundStyle(.orange).lineLimit(showWhy ? 3 : 2).padding(.top, showWhy ? 2 : 0) }
         }
     }
@@ -785,7 +787,7 @@ struct Center: View {
                 }
                 Text(m.thinking ? "שאלה חדשה…" : (m.current?.question ?? "")).font(.system(size: 13)).foregroundStyle(.secondary).lineLimit(2).padding(.top, 8)
                 GeometryReader { g in
-                    let big = max(40, min(96, g.size.width / 8))   // grows with the window
+                    let big = max(36, min(48, g.size.width / 12))   // level 1: 36-48 pt, grows a little with the window
                     VStack(alignment: .leading) {
                         if m.thinking { Text("• • •").font(.system(size: big, weight: .bold)).foregroundStyle(.tertiary) }
                         else if let it = m.current { AnswerBlock(item: it, big: big) }
@@ -807,7 +809,7 @@ struct Center: View {
 // SELF_REPORT: what the statement really asks, and the options as they appear on screen. No recommendation.
 struct SelfReportCard: View {
     let sr: Model.SelfReport; let big: Bool
-    var size: CGFloat { big ? 30 : 18 }
+    var size: CGFloat { big ? 24 : 18 }   // level 2
     // The words that flip or limit the meaning (לא, בלי, תמיד, רק, קרה...) are heavier than the rest of the sentence.
     var styled: AttributedString {
         var out = AttributedString()
@@ -826,7 +828,7 @@ struct SelfReportCard: View {
             if big { Label("שאלון אישי · אין תשובה נכונה", systemImage: "person.text.rectangle").font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary) }
             // One glance: WHAT it is about (big), HOW to answer (small), the options on one quiet line.
             Text(styled).font(.system(size: size, weight: .semibold)).lineSpacing(big ? 6 : 2).fixedSize(horizontal: false, vertical: true)
-            if !sr.ask.isEmpty { Text(sr.ask).font(.system(size: big ? 16 : 13, weight: .medium)).foregroundStyle(.secondary) }
+            if !sr.ask.isEmpty { Text(sr.ask).font(.system(size: big ? 15 : 13, weight: .medium)).foregroundStyle(.secondary) }   // level 3
             Text(sr.options.joined(separator: "  ·  ")).font(.system(size: big ? 13 : 11)).foregroundStyle(Color.accentColor).fixedSize(horizontal: false, vertical: true)
         }
     }

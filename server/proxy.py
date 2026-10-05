@@ -33,7 +33,10 @@ CONF = os.path.expanduser("~/.config/screenreader")
 PORT = int(os.environ.get("SR_PORT", "8099"))
 # Paid tier (Tier 1). Order = preference; a model is skipped while Google reports it over quota.
 FAST = os.environ.get("SR_MODELS", "gemini-flash-latest,gemini-3.8-flash,gemini-flash-lite-latest").split(",")
-STRONG = os.environ.get("SR_STRONG", "gemini-pro-latest,gemini-3.8-flash").split(",")   # re-check of unsure answers (paid tier)
+STRONG = os.environ.get("SR_STRONG", "gemini-pro-latest,gemini-3.8-flash").split(",")
+# Accuracy over speed (owner's call, 2026-10-05): every screen goes to the strongest model with full thinking;
+# the fast models are only a fallback when it is unavailable.
+PRIMARY = os.environ.get("SR_PRIMARY", "gemini-pro-latest").split(",") + FAST
 
 GUIDE = """How to solve each kind (use the unit instructions in CONTEXT when present — they define the rules):
 - Analogies: find the exact relation in the given pair (part-whole, cause, degree, tool-use...), pick the option with the same relation in the same direction.
@@ -81,6 +84,18 @@ GUIDE = """How to solve each kind (use the unit instructions in CONTEXT when pre
   symbol in the chain carefully from the IMAGE (□ empty vs ▣ filled vs ■ black are different), apply the operations one by
   one in order and write every intermediate result in WORK (e.g. QLCW -> QQLCW -> QQLWC); the option equal to the last
   result is the answer.
+- Mental rotation vs mirror (flags, arrows, L-shapes, asymmetric figures): pick two distinct features (e.g. the flag and
+  the dot, or the short and the long arm) and note their order going clockwise. A rotation keeps that order; a mirror image
+  reverses it. Check every option this way; an option identical in orientation to the base shape counts as a rotation of
+  0° unless the question asks for a different one. Never choose a mirror image for "סיבוב".
+- Cube nets: in a net, two faces with exactly one face between them in a straight line are OPPOSITE and can never be seen
+  together on a folded cube. For each option, list the visible faces, reject any option showing an opposite pair, then
+  check adjacency/orientation of the remaining ones. Write the opposite pairs in WORK first.
+- Answer options in a grid (several rows, some without letters): count every option box in reading order (right-to-left,
+  top row first, then the next row) and use its own label if printed, otherwise the next letter in sequence.
+- Multi-step list questions ("קודם סננו ואז ספרו", "מבין המספרים הגדולים מ-X, מהו השני"): use the printed item numbers
+  for order (OCR of right-to-left lines can scramble it), filter first (strictly greater = excludes X itself), then count.
+  Write the filtered list in WORK.
 - Numbers on screen: Hebrew right-to-left text can scramble the order of numbers in OCR; trust the image for order."""
 
 PROMPT = """You assist with a multiple-choice practice simulator (Hebrew or English). Input: noisy OCR of the captured screen, sometimes an image of it, and CONTEXT = instructions of the current unit (and a reading passage) seen earlier.
@@ -96,7 +111,7 @@ First classify the screen:
 - OTHER: anything else (menu, loading, score, unrelated app).
 Reply with these lines only, no extra text. Write every value (Q, A, WHY, UNIT, SUMMARY) in the same language as the question on screen:
 For QUESTION:
-WORK: <only for rules (נכון / לא נכון / לא ניתן לדעת), calculations, sequences and symbol-operation chains: the computation itself, step by step, max 40 words.
+WORK: <for rules (נכון / לא נכון / לא ניתן לדעת), calculations, sequences, list filtering, symbol chains, rotations and cube nets: the computation itself, step by step, max 40 words.
   Finish it before you write ANSWER; ANSWER, A and WHY must state the final result of WORK, with no second thoughts. Otherwise ->
 ANSWER: <option label exactly as on screen, e.g. א/ב/ג/ד or 1/2/3/4; for FORMAT typed: the value to type (number or word);
   for FORMAT order: all labels in the correct order joined by " ← " (first ← ... ← last); for FORMAT multi: every correct label joined by " + ">
@@ -164,7 +179,7 @@ def gemini(key, model, text, image, context, strong=False):
     req = urllib.request.Request(
         f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
         data=json.dumps(body).encode(), headers={"content-type": "application/json", "x-goog-api-key": key})
-    with urllib.request.urlopen(req, timeout=15 if not strong else 35) as r:
+    with urllib.request.urlopen(req, timeout=15 if not strong else 100) as r:
         j = json.load(r)
     return "".join(p.get("text", "") for c in j.get("candidates", [])
                    for p in c.get("content", {}).get("parts", []) if not p.get("thought")).strip()
@@ -340,20 +355,15 @@ class H(BaseHTTPRequestHandler):
         self.send_header("content-type", "text/plain; charset=utf-8")
         self.send_header("transfer-encoding", "chunked")
         self.end_headers()
-        out, err = first_ok(key, FAST, *args)
+        out, err = first_ok(key, PRIMARY, *args, strong=True)
         fix = self_report_fix(out)
         if fix:   # one corrective retry: PLAIN must keep every meaning-bearing qualifier and resolve double negation
             text, image, ctx = args
-            again, _ = first_ok(key, FAST, text, image, f"{ctx}\nCORRECTION: {fix}")
+            again, _ = first_ok(key, PRIMARY, text, image, f"{ctx}\nCORRECTION: {fix}", strong=True)
             ok = bool(again) and "KIND: self_report" in again and not self_report_fix(again)
             if ok: out = again
             print(f"self_report retry -> {'fixed' if ok else 'not fixed'}", flush=True)
         out = mark_same(out, args[0] if isinstance(args[0], str) else "")
-        if out and "KIND: question" in out and "CONF: low" in out:
-            self.chunk("CHECKING\n")                      # app shows "בודק שוב…"
-            better, _ = first_ok(key, STRONG, *args, strong=True)
-            if better and "ANSWER:" in better:
-                out = better
         self.chunk(out or err)
         self.wfile.write(b"0\r\n\r\n"); self.wfile.flush()
 
