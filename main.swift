@@ -398,6 +398,8 @@ func refreshWindowList() async {
     @Published var windows: [(bundleID: String, windowID: CGWindowID, name: String)] = []
     @Published var showSummary = false
     @Published var needsPermission = false
+    @Published var manual = UserDefaults.standard.bool(forKey: "manual") { didSet { UserDefaults.standard.set(manual, forKey: "manual") } }   // answer only on ↻ / ⌥⌘R
+    @Published var thinkStart = Date()
     @Published var showList = UserDefaults.standard.bool(forKey: "showList") { didSet { UserDefaults.standard.set(showList, forKey: "showList") } }
     // Technical line (capture / OCR / server ms): hidden unless switched on from the menu.
     @Published var showTech = UserDefaults.standard.bool(forKey: "showTech") { didSet { UserDefaults.standard.set(showTech, forKey: "showTech") } }
@@ -510,7 +512,7 @@ func refreshWindowList() async {
     }
 
     func tick() {
-        guard phase == .running, !busy else { return }
+        guard phase == .running, !busy, !manual else { return }   // manual mode: only ↻ / ⌥⌘R reads the screen
         busy = true
         Task {
             defer { busy = false }
@@ -560,7 +562,7 @@ func refreshWindowList() async {
         let ctx = context()
         let t0 = Date()
         pending = text.split(whereSeparator: \.isNewline).prefix(2).joined(separator: " ")
-        thinking = true; status = "חושב…"; inflight += 1; failed = false
+        thinking = true; thinkStart = Date(); status = "חושב…"; inflight += 1; failed = false
         _ = synth.stopSpeaking(at: .immediate)                    // a new screen: stop reading the previous statement
         Task {
             // Busy/quota/network: retry up to 3 times (2s, 5s, 10s) before giving up on this screen.
@@ -702,7 +704,9 @@ struct MainView: View {
                 if m.inflight > 1 { Text("+\(m.inflight - 1)").font(.system(size: 11)).foregroundStyle(.secondary).help("עונה גם על שאלות קודמות") }
                 Spacer()
                 SourceMenu(m: m)
-                Button { m.askAgain() } label: { Image(systemName: "arrow.clockwise") }.help("קרא את המסך עכשיו (⌥⌘R)")
+                Picker("", selection: $m.manual) { Text("אוטומטי").tag(false); Text("ידני").tag(true) }
+                    .pickerStyle(.segmented).fixedSize().help("ידני: עונה רק כשלוחצים ⟳ (⌥⌘R) אחרי מעבר שאלה")
+                Button { m.askAgain() } label: { Label(m.manual ? "הבא" : "", systemImage: "arrow.clockwise") }.help("קרא את המסך עכשיו (⌥⌘R)")
                 Button { m.step(-1) } label: { Image(systemName: "chevron.right") }.help("שאלה קודמת")
                 Button { m.step(1) } label: { Image(systemName: "chevron.left") }.help("שאלה הבאה")
                 Button { m.speak.toggle() } label: { Image(systemName: m.speak ? "speaker.wave.2.fill" : "speaker.slash") }.help(m.speak ? "הקראה בקול פועלת (שאלון אישי) — לחץ לכיבוי" : "הקראה בקול כבויה — לחץ להפעלה")
@@ -790,7 +794,7 @@ struct Center: View {
                 GeometryReader { g in
                     let big = max(36, min(48, g.size.width / 12))   // level 1: 36-48 pt, grows a little with the window
                     VStack(alignment: .leading) {
-                        if m.thinking { Text("• • •").font(.system(size: big, weight: .bold)).foregroundStyle(.tertiary) }
+                        if m.thinking { ThinkingView(m: m, big: true) }
                         else if let it = m.current { AnswerBlock(item: it, big: big) }
                         else if !m.status.isEmpty && m.strip == nil { Text(m.status).font(.system(size: 20, weight: .semibold)).foregroundStyle(.secondary) }   // errors / waiting: readable, not a footnote
                     }.frame(maxWidth: .infinity, alignment: .leading)
@@ -804,6 +808,22 @@ struct Center: View {
             }
         }
         .padding(.horizontal, 28).padding(.vertical, 22)
+    }
+}
+
+// While the server works: elapsed seconds and a moving bar, so a long answer never looks stuck.
+struct ThinkingView: View {
+    @ObservedObject var m: Model; let big: Bool
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { ctx in
+            let sec = Int(ctx.date.timeIntervalSince(m.thinkStart))
+            VStack(alignment: .leading, spacing: big ? 8 : 4) {
+                Text(m.status == "בודק שוב…" ? "בודק שוב… \(sec) שנ׳" : "חושב… \(sec) שנ׳")
+                    .font(.system(size: big ? 24 : 18, weight: .semibold)).foregroundStyle(.secondary).monospacedDigit()
+                ProgressView().progressViewStyle(.linear).frame(maxWidth: big ? 260 : 180)
+                if sec >= 12 { Text("שאלה קשה — המודל החזק עדיין בודק").font(.system(size: big ? 13 : 11)).foregroundStyle(.tertiary) }
+            }
+        }
     }
 }
 
@@ -887,7 +907,7 @@ struct MiniView: View {
                 Button(action: onExpand) { Image(systemName: "arrow.up.left.and.arrow.down.right") }.buttonStyle(.plain).foregroundStyle(.secondary).help("חלון מלא (⌥⌘M)")
             }
             if m.strip != nil { StatusStrip(m: m, size: 13) }
-            if m.thinking { Text("• • •").font(.system(size: 28, weight: .semibold)).foregroundStyle(.tertiary) }
+            if m.thinking { ThinkingView(m: m, big: false) }
             else if let sr = m.selfReport { SelfReportCard(sr: sr, big: false) }
             else if let u = m.instructions { Text(u.title).font(.system(size: 20, weight: .semibold)); Text("הנחיות יחידה").font(.system(size: 11)).foregroundStyle(.purple) }
             else if let it = m.current { AnswerBlock(item: it, big: 28, showWhy: false, showTag: true) }

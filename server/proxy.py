@@ -140,6 +140,11 @@ PLAIN: <WHAT it is about: the core content as a very short, everyday Hebrew phra
   ("לא נכון לומר שמעולם לא היה מצב שבו הקפדת על כללים" -> "הקפדתי על כללים"). Use simple words, but keep the meaning:
   keep conditions that change it ("בלי פיקוח", "בלי רשות", "לצורך אישי", "גם במצב לא נוח", "כי חשבתי שזה לא חשוב") and
   every qualifier word (לא, מעולם, אף פעם, תמיד, בדרך כלל, לעיתים, לפעמים, רק, ללא, בלי). No question mark.
+  Exception: when the options are a FREQUENCY scale (אף פעם ... תמיד) and the statement itself also states a frequency
+  ("רק לעיתים נדירות", "לרוב", "בדרך כלל"), leave that frequency out of PLAIN — the scale asks it — and keep the behaviour
+  ("רק לעיתים נדירות לא דיווחתי על תקלה שגרמתי כשהייתי בטוח שלא ישימו לב" -> "לא דיווחתי על תקלה שגרמתי כשחשבתי שלא ישימו לב").
+  Keep the circumstances exactly: "כש..." stays "כש..." (never add "גם"), and keep conditions such as "לא הייתה ברירה",
+  "רק אם", "בלי לבדוק" ("היו מצבים שלא הייתה לך ברירה אלא לא לציין שעות שלא עבדת" -> "נאלצתי לדווח שעות שלא עבדתי").
   Examples: "קרה שהצגתי מצב בצורה טובה יותר ממה שהיה באמת כדי להימנע מביקורת" -> "ייפיתי מצב כדי לא לקבל ביקורת";
   "באיזו תדירות נכון לומר שאני מקפיד על כללים גם כשאף אחד אינו בודק אותי?" -> "מקפיד על כללים גם בלי פיקוח";
   "לדעתך מתנה קטנה מלקוח אינה בעייתית" -> "מתנה קטנה מלקוח זה בסדר (לדעתי)".>
