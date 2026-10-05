@@ -100,7 +100,9 @@ GUIDE = """How to solve each kind (use the unit instructions in CONTEXT when pre
 
 PROMPT = """You assist with a multiple-choice practice simulator (Hebrew or English). Input: noisy OCR of the captured screen, sometimes an image of it, and CONTEXT = instructions of the current unit (and a reading passage) seen earlier.
 First classify the screen:
-- INSTRUCTIONS: a unit/section intro explaining the question type or rules (no answer options to choose).
+- INSTRUCTIONS: a unit/section intro explaining the question type or rules (no answer options to choose). A screen with a
+  question and answer options — even if the options are only drawings with letters (א ב ג ד) and there is little text —
+  is a QUESTION, never INSTRUCTIONS.
 - QUESTION: one active question with answer options.
 - SELF_REPORT: a statement or question about the test-taker's OWN behavior, habits, attitudes or opinions, answered on a
   personal scale (yes/no, true/not true for me, agreement, frequency), and questions about the test-taker's own past
@@ -169,7 +171,8 @@ def gemini(key, model, text, image, context, strong=False):
     if image:
         parts.append({"inline_data": {"mime_type": "image/png", "data": image}})
     parts.append({"text": (f"CONTEXT:\n{context}\n\n" if context else "") + "SCREEN OCR:\n" + text})
-    gen = {"maxOutputTokens": 2500 if not strong else 6000}
+    # strong: fixed thinking budget + room for the reply (with no cap, Pro spent the whole output budget thinking -> empty reply)
+    gen = {"maxOutputTokens": 2500} if not strong else {"maxOutputTokens": 12000, "thinkingConfig": {"thinkingBudget": 4096}}
     if not strong:   # true/false/cannot-tell logic needs more reasoning than a lookup question
         rules = bool(RULES_RE.search(text))
         gen["thinkingConfig"] = {"thinkingBudget": 3072 if rules else 1024}
@@ -179,7 +182,7 @@ def gemini(key, model, text, image, context, strong=False):
     req = urllib.request.Request(
         f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
         data=json.dumps(body).encode(), headers={"content-type": "application/json", "x-goog-api-key": key})
-    with urllib.request.urlopen(req, timeout=15 if not strong else 100) as r:
+    with urllib.request.urlopen(req, timeout=15 if not strong else 75) as r:
         j = json.load(r)
     return "".join(p.get("text", "") for c in j.get("candidates", [])
                    for p in c.get("content", {}).get("parts", []) if not p.get("thought")).strip()
@@ -291,6 +294,29 @@ def ask_for(opts):
     return "כן או לא?"
 
 
+VOTERS = os.environ.get("SR_VOTERS", "gemini-pro-latest,gemini-3.8-flash,gemini-flash-latest").split(",")
+def vote(key, args):
+    """Questions with drawings (shapes, rotations, cubes, matrices): three models answer in parallel; the majority wins.
+    No majority -> the strongest model's reply, marked CONF: low so the app shows "לבדוק". Not a question -> first reply."""
+    from concurrent.futures import ThreadPoolExecutor
+    def one(m):
+        try: return tidy(gemini(key, m, *args, strong=True))
+        except Exception as e:
+            print(f"vote {m} {type(e).__name__}", flush=True); return ""
+    with ThreadPoolExecutor(len(VOTERS)) as ex: outs = list(ex.map(one, VOTERS))
+    got = [(o, {l.split(":", 1)[0].strip(): l.split(":", 1)[1].strip() for l in o.splitlines() if ":" in l}) for o in outs if "KIND:" in o]
+    if not got: return first_ok(key, PRIMARY, *args, strong=True)
+    qs = [(o, f) for o, f in got if f.get("KIND", "").lower() == "question" and f.get("ANSWER")]
+    if not qs: return got[0][0], ""
+    labels = [f["ANSWER"] for _, f in qs]
+    best = max(set(labels), key=labels.count)
+    print(f"vote {labels} -> {best if labels.count(best) >= 2 else 'no majority'}", flush=True)
+    if labels.count(best) >= 2:
+        return next(o for o, f in qs if f["ANSWER"] == best), ""
+    o = qs[0][0]   # VOTERS[0] (strongest) first in order
+    return re.sub(r"(?m)^CONF:.*$", "CONF: low", o) if "CONF:" in o else o + "\nCONF: low", ""
+
+
 def first_ok(key, models, *a, **kw):
     """Busy/quota/unknown model -> next model. Returns (text, error)."""
     err = ""
@@ -355,7 +381,7 @@ class H(BaseHTTPRequestHandler):
         self.send_header("content-type", "text/plain; charset=utf-8")
         self.send_header("transfer-encoding", "chunked")
         self.end_headers()
-        out, err = first_ok(key, PRIMARY, *args, strong=True)
+        out, err = vote(key, args) if q.get("visual") else first_ok(key, PRIMARY, *args, strong=True)
         fix = self_report_fix(out)
         if fix:   # one corrective retry: PLAIN must keep every meaning-bearing qualifier and resolve double negation
             text, image, ctx = args

@@ -211,21 +211,21 @@ func explain(_ image: CGImage, _ screenText: String, context: String = "", visua
     if let c = answerCache[key] { return (c.mode, c.answer, true) }
     let png = l.visual ? croppedPNG(image, l.crop) : visualUnit ? croppedPNG(image, CGRect(x: 0, y: 0, width: image.width, height: image.height)) : nil
     let mode = png == nil ? "TEXT" : "VISUAL"
-    let answer = try await ask(screenText, png, context, onPartial)
+    let answer = try await ask(screenText, png, context, visual: l.visual, onPartial)
     let kind = Reply(answer).kind
     if !kind.isEmpty && kind != "error" { answerCache[key] = (mode, answer) }   // never cache a server error or an empty reply
     return (mode, answer, false)
 }
 
 // Streams the answer from the server; onPartial gets the text so far.
-func ask(_ text: String, _ png: Data?, _ context: String, _ onPartial: @escaping @Sendable (String) -> Void) async throws -> String {
+func ask(_ text: String, _ png: Data?, _ context: String, visual: Bool = false, _ onPartial: @escaping @Sendable (String) -> Void) async throws -> String {
     let c = serverConfig()
     guard let url = URL(string: c.url + "/ask"), !c.token.isEmpty else { return "No server configured (\(serverFile))." }
     var r = URLRequest(url: url)
     r.httpMethod = "POST"; r.timeoutInterval = 150   // strongest model with full thinking can take a while
     r.setValue("application/json", forHTTPHeaderField: "content-type")
     r.setValue(c.token, forHTTPHeaderField: "X-Token")
-    r.httpBody = try JSONSerialization.data(withJSONObject: ["text": text, "image": png?.base64EncodedString() as Any, "context": context])
+    r.httpBody = try JSONSerialization.data(withJSONObject: ["text": text, "image": png?.base64EncodedString() as Any, "context": context, "visual": visual])
     let (bytes, resp) = try await URLSession.shared.bytes(for: r)
     var acc = ""
     for try await line in bytes.lines { acc += (acc.isEmpty ? "" : "\n") + line; onPartial(acc) }
