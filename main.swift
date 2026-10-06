@@ -539,7 +539,10 @@ func refreshWindowList() async {
                 let stable = text.replacingOccurrences(of: #"\b\d{1,2}:\d{2}(:\d{2})?\b"#, with: "", options: .regularExpression)
                 let num = questionNumber(text)
                 let numberMoved = num != nil && answeredNum != nil && num != answeredNum
-                if numberMoved || similarity(stable, lastText) < 0.85 {
+                // Chat-style simulators keep the previous question on screen and ADD the new one below it: most of the
+                // text is unchanged, so also count newly added words.
+                let added = Set(stable.split(whereSeparator: { $0.isWhitespace })).subtracting(Set(lastText.split(whereSeparator: { $0.isWhitespace }))).count
+                if numberMoved || similarity(stable, lastText) < 0.85 || added >= 8 {
                     answeredNum = num; lastText = stable; lastRaw = text; handle(img, text)
                 }
             } catch {
