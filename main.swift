@@ -855,8 +855,9 @@ struct SelfReportCard: View {
             if sr.meanings.count == sr.options.count && !sr.options.isEmpty {
                 // Every option translated into what it says about this statement — all the same way, none marked.
                 VStack(alignment: .leading, spacing: big ? 6 : 3) {
-                    ForEach(Array(zip(sr.options, sr.meanings).enumerated()), id: \.offset) { _, p in
+                    ForEach(Array(zip(sr.options, sr.meanings).enumerated()), id: \.offset) { i, p in
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text("\(i + 1).").font(.system(size: big ? 15 : 12, weight: .semibold)).foregroundStyle(.secondary).monospacedDigit()   // same order as on screen
                             Text(p.0).font(.system(size: big ? 15 : 12, weight: .semibold)).foregroundStyle(Color.accentColor)
                             Text("←").font(.system(size: big ? 13 : 11)).foregroundStyle(.tertiary)
                             Text(p.1).font(.system(size: big ? 15 : 12)).fixedSize(horizontal: false, vertical: true)
