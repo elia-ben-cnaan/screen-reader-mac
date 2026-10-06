@@ -121,6 +121,9 @@ WORK: <for rules (נכון / לא נכון / לא ניתן לדעת), calculatio
 ANSWER: <option label exactly as on screen, e.g. א/ב/ג/ד or 1/2/3/4; for FORMAT typed: the value to type (number or word);
   for FORMAT order: all labels in the correct order joined by " ← " (first ← ... ← last); for FORMAT multi: every correct label joined by " + ">
 FORMAT: <choice (pick one option) | typed (an input box, no options) | order (arrange items in order) | multi ("סמן את כל ה..." / select all that apply)>
+  When answer options are shown (lettered א/ב/ג/ד or numbered 1/2/3/4 — even if the options themselves are numbers), FORMAT is
+  choice and ANSWER is the option's LABEL (e.g. 2), never its value (198). TRAP also names the label. "typed" only when
+  there is an empty input box and no options.
 KIND: question
 NUM: <question number if visible, else ->
 Q: <the question, cleaned, max 20 words>
@@ -229,6 +232,32 @@ HESITATION = re.compile(r"רגע[:,!. ]|בעצם |טעות|\bwait\b|\bactually\b
 LABELS = "אבגדהABCDE12345"
 # A choice label is one Hebrew/Latin letter or a 1-2 digit number, alone or followed by a separator ("ב", "ב.", "ב (48)", "12").
 LABEL_RE = re.compile(r"^([א-ת]|[A-Ea-e]|\d{1,2})(?=$|[\s.)\]:—–'׳\"״-])")
+OPT_LINE = re.compile(r"(?m)^\s*([א-ד]|[1-9])\s*[.)]\s*(.+?)\s*$")
+def options_on_screen(text):
+    """Numbered / lettered option lines on the screen: [(label, value), ...]."""
+    return [(m[1], m[2].strip()) for m in OPT_LINE.finditer(text or "")]
+def fix_label(out, screen):
+    """The model sometimes writes the VALUE of an option as a typed answer ("הקלד: 198") when the options are numbers.
+    If that value is one of the options on screen, answer with the option's label instead."""
+    f = {l.split(":", 1)[0].strip().upper(): l.split(":", 1)[1].strip() for l in out.splitlines() if ":" in l}
+    if f.get("KIND", "").lower() != "question":
+        return out
+    opts = options_on_screen(screen)
+    if len(opts) < 2:
+        return out
+    labels = {l for l, _ in opts}
+    ans = f.get("ANSWER", "").strip()
+    if ans in labels and f.get("FORMAT", "choice") == "choice":
+        return out
+    norm = lambda v: re.sub(r"[^\w%]", "", v)
+    hit = [l for l, v in opts if norm(v) == norm(ans) or norm(v) == norm(f.get("A", ""))]
+    if f.get("FORMAT", "") in ("typed", "") and len(hit) == 1:
+        out = re.sub(r"(?m)^ANSWER:.*$", f"ANSWER: {hit[0]}", out)
+        out = re.sub(r"(?m)^FORMAT:.*$", "FORMAT: choice", out) if "FORMAT:" in out else out
+        if "A:" not in out or not f.get("A"): out += f"\nA: {ans}"
+    return out
+
+
 def tidy(out):
     """Models sometimes drop the ANSWER line or write 'ב.' — normalise so the app always gets a clean label."""
     lines = [l.strip().replace("**", "") for l in out.splitlines() if l.strip()]
@@ -436,6 +465,7 @@ class H(BaseHTTPRequestHandler):
             if ok: out = again
             print(f"self_report retry -> {'fixed' if ok else 'not fixed'}", flush=True)
         out = mark_same(out, args[0] if isinstance(args[0], str) else "")
+        out = fix_label(out, args[0] if isinstance(args[0], str) else "")
         self.chunk(out or err)
         self.wfile.write(b"0\r\n\r\n"); self.wfile.flush()
 
