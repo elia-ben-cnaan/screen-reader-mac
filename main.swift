@@ -1076,7 +1076,20 @@ nonisolated(unsafe) var hotkeyRefs: [EventHotKeyRef?] = []
 
     func toggleFloat() {
         if panel.isVisible { panel.orderOut(nil); window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true) }
-        else { panel.orderFrontRegardless(); window.orderOut(nil) }
+        else {
+            // Size the card to its content before showing (it could open at 0×0), and bring it back on screen if a saved
+            // position is off-screen (another monitor, resolution change).
+            if let v = panel.contentViewController?.view {
+                v.layoutSubtreeIfNeeded()
+                let fit = v.fittingSize
+                panel.setContentSize(NSSize(width: max(220, fit.width), height: max(80, fit.height)))
+            }
+            let onScreen = NSScreen.screens.contains { $0.visibleFrame.intersects(panel.frame) }
+            if !onScreen || panel.frame.width < 50, let vis = NSScreen.main?.visibleFrame {
+                panel.setFrameTopLeftPoint(NSPoint(x: vis.minX + 20, y: vis.maxY - 20))
+            }
+            panel.orderFrontRegardless(); window.orderOut(nil)
+        }
     }
 
     func buildMenu() {
